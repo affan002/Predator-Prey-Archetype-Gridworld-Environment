@@ -1,11 +1,18 @@
 from multi_agent_package.gridworld import GridWorldEnv
 from multi_agent_package.helpers.helper import print_mdp_tuple
+from multi_agent_package.agents import Agent
 
+
+agent1 = Agent("prey","Tom")
+agent2 = Agent("predator","Jerry")
+agent3 = Agent("judge","Spike")
+agents = [agent1,agent2,agent3]
 # Create an environment (e.g., CartPole)
-env = GridWorldEnv(num_agents= 3, render_mode="human", size=10, perc_num_obstacle=10)
+env = GridWorldEnv(agents= agents, render_mode="human", size=10, perc_num_obstacle=10)
 
 # Reset the environment
-state,_ = env.reset()
+state, info = env.reset()
+print(state,info)
 
 # Example of an interaction loop
 for i in range(100):
