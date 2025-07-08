@@ -1,4 +1,21 @@
-check.py
-.pytest_cache/
+# Ignore VS Code settings
 .vscode/
+
+# Ignore Python virtual environments
 marl-project-venv/
+
+# Ignore pytest cache
+.pytest_cache/
+__pycache__/
+
+# Ignore compiled Python files
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore logs and temporary files
+*.log
+*.tmp
+
+# Ignore environment variables (optional)
+.env
