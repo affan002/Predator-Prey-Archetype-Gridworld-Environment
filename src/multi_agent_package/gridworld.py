@@ -89,8 +89,15 @@ class GridWorldEnv(gym.Env):
 
     def _get_obs(self):
         obs = {}
+
         for ag in self.agents:
-            obs[ag.agent_name] = ag._get_obs()
+            ag_name = ag.agent_name
+            dist = {}
+            for ag2  in self.agents:
+                ag2_name = ag2.agent_name
+                if ag_name != ag2_name:
+                    dist[ag2_name] = self._dist_func(ag,ag2)
+            obs[ag.agent_name] = ag._get_obs({'dist' : dist})
         
         return obs
 
@@ -154,6 +161,17 @@ class GridWorldEnv(gym.Env):
         return obstacle_location
     
 
+    def _dist_func(self,agent1, agent2):
+        dist1 = agent1._agent_location
+        dist2 = agent2._agent_location
+
+        diff = dist1-dist2
+        diff_norm = int(np.linalg.norm(diff))
+
+        return diff_norm   
+
+
+
     def _get_reward(self):
         # agent_win = np.array_equal(self.agents[agent_id]._agent_location, self.agents[agent_id]._target_location)
         # obstacle_hit = any(np.array_equal(self.agents[agent_id]._agent_location, arr) for arr in self._obstacle_location)
@@ -165,6 +183,10 @@ class GridWorldEnv(gym.Env):
         #     reward = 1
         # else:
         #     reward = 0
+
+        
+
+
 
         #TBD
         reward = {}
@@ -181,12 +203,14 @@ class GridWorldEnv(gym.Env):
 
         for ag in self.agents:
             # Map the action (element of {0,1,2,3}) to the direction we walk in
-            direction = ag._actions_to_directions[action[ag.agent_name]]
+            steps = ag._get_info()['speed']
+            for step in range(steps):
+                direction = ag._actions_to_directions[action[ag.agent_name]]
             
-            # We use `np.clip` to make sure we don't leave the grid
-            ag._agent_location = np.clip(
-                        ag._agent_location + direction, 0, self.size - 1
-                        )
+                # We use `np.clip` to make sure we don't leave the grid
+                ag._agent_location = np.clip(
+                            ag._agent_location + direction, 0, self.size - 1
+                            )
 
         agents_mdp['obs'] = self._get_obs()
 
