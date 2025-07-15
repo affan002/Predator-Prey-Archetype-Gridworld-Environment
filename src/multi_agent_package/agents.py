@@ -20,6 +20,13 @@ class Agent(gym.Env):
 
         self.agent_type = agent_type
         self.agent_name = agent_name
+        
+        if self.agent_type == 'predator':
+            self.agent_speed = 1
+        elif self.agent_type == 'prey':
+            self.agent_speed  = 3
+        else:
+            self.agent_speed = 1
 
         # self.observation_space = self._make_observation_space() # implement self._make_observation_space()
 
@@ -65,7 +72,8 @@ class Agent(gym.Env):
 
     def _get_info(self):
         return {
-            "<placeholder>": self.agent_name
+            "name": self.agent_name,
+            "speed": self.agent_speed
         }
 
 
