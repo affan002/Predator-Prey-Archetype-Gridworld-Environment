@@ -1,3 +1,6 @@
+import math
+from typing import List, Dict, Optional, Tuple
+
 import numpy as np
 import pygame
 import gymnasium as gym
@@ -5,83 +8,149 @@ from gymnasium import spaces
 
 from multi_agent_package.agents import Agent
 
+
 class GridWorldEnv(gym.Env):
     """
-    A multi-agent grid world environment using Gymnasium and Pygame.
-    Each agent moves in a grid world, interacting with others and avoiding obstacles.
+    Multi-agent GridWorld environment.
 
-    Attributes:
-        agents (list): List of agent instances.
-        render_mode (str): 'human' or 'rgb_array'.
-        size (int): Size of the grid.
-        perc_num_obstacle (int): % of grid cells as obstacles.
+    Each `Agent` instance must implement the methods/properties used here
+    (e.g. `_agent_location`, `_draw_agent`, `_get_info`, `_get_obs`).
+
+    Design notes
+    --------------
+    - This environment is intentionally minimal and focuses on grid positioning
+      and visualization. Game logic (collisions, goals, team-rewards, etc.) should
+      be implemented in wrapper methods or by extending this class.
+    - Rendering uses pygame; call `reset(render_mode='human')` or set
+      `render_mode='human'` on construction to enable an interactive window.
+
+    Parameters
+    ----------
+    agents : List[Agent]
+        List of agent instances participating in the environment.
+    render_mode : Optional[str]
+        'human' or 'rgb_array' or None. When 'human', a pygame window will be
+        created on `reset` / `_render_frame`.
+    size : int
+        Number of grid cells on one side (grid is size x size).
+    perc_num_obstacle : float
+        Percentage (0-100) of grid cells that should be obstacles.
+    window_size : int
+        Pixel size of the pygame rendering window (square).
+    seed : Optional[int]
+        Seed for the internal RNG (numpy Generator).
     """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, agents: list, render_mode=None, size=5, perc_num_obstacle=30):
-        # Basic environment parameters
-        self.size = size
-        self.window_size = 600
-        self.perc_num_obstacle = perc_num_obstacle
-        self._num_obstacles = int((self.perc_num_obstacle / 100) * (self.size * self.size))
+    def __init__(
+        self,
+        agents: List[Agent],
+        render_mode: Optional[str] = None,
+        size: int = 5,
+        perc_num_obstacle: float = 30.0,
+        window_size: int = 600,
+        seed: Optional[int] = None,
+    ) -> None:
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
 
-        # Define action space (Right, Up, Left, Down)
+        self.size = int(size)
+        self.window_size = int(window_size)
+        self.perc_num_obstacle = float(perc_num_obstacle)
+        self._num_obstacles = int((self.perc_num_obstacle / 100.0) * (self.size * self.size))
+
+        # RNG for reproducible placement
+        self.rng: np.random.Generator = np.random.default_rng(seed)
+
+        # action / observation spaces (per-agent) are simple Discrete/Box for now
         self.action_space = self._make_action_space()
 
-        # Initialize agents
-        self.agents = agents
-        self.num_agents = {'total': len(self.agents)}
+        # Agents
+        self.agents: List[Agent] = agents
+        # Compute counts per type
+        self.num_agents: Dict[str, int] = {"total": len(self.agents)}
         for ag in self.agents:
-            if str(ag.agent_type) in self.num_agents:
-                self.num_agents[str(ag.agent_type)] += 1
-            else:
-                self.num_agents[str(ag.agent_type)] = 1
+            key = str(ag.agent_type)
+            self.num_agents[key] = self.num_agents.get(key, 0) + 1
 
-        # Set rendering mode
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        # rendering state
         self.render_mode = render_mode
-        self.window = None
-        self.clock = None
+        self.window: Optional[pygame.Surface] = None
+        self.clock: Optional[pygame.time.Clock] = None
 
-    def _make_observation_space(self):
-        """Creates the observation space for each agent as their position."""
-        observation_space = spaces.Dict({})
+        # Internal state
+        self._agents_location: List[np.ndarray] = []
+        self._obstacle_location: List[np.ndarray] = []
+
+    # -------------------------
+    # Spaces / observations
+    # -------------------------
+    def _make_observation_space(self) -> spaces.Dict:
+        """Create a Dict observation space mapping agent_name -> Box(position)."""
+        obs_space = spaces.Dict({})
         for ag in self.agents:
-            observation_space[ag.agent_name] = spaces.Box(0, self.size - 1, shape=(2,), dtype=int)
-        return observation_space
+            obs_space.spaces[ag.agent_name] = spaces.Box(
+                low=0,
+                high=self.size - 1,
+                shape=(2,),
+                dtype=np.int32,
+            )
+        return obs_space
 
-    def _make_action_space(self):
-        """Defines 4 discrete actions for each agent."""
+    def _make_action_space(self) -> spaces.Discrete:
+        """Discrete actions: Right, Up, Left, Down, Noop"""
         return spaces.Discrete(5)
 
-    def _get_obs(self):
-        """Gets current observations: relative distances to other agents."""
-        obs = {}
+    def _get_obs(self) -> Dict[str, Dict]:
+        """Return current observations for every agent.
+
+        The returned structure is a dict mapping agent_name -> agent._get_obs(...)
+        where each agent receives a small 'global' context containing distances.
+        """
+        obs: Dict[str, Dict] = {}
         for ag in self.agents:
-            dist = {}
+            distances: Dict[str, int] = {}
             for ag2 in self.agents:
                 if ag.agent_name != ag2.agent_name:
-                    dist[ag2.agent_name] = self._dist_func(ag, ag2)
-            obs[ag.agent_name] = ag._get_obs({'dist': dist})
+                    distances[ag2.agent_name] = self._dist_func(ag, ag2)
+            obs[ag.agent_name] = ag._get_obs({"dist": distances})
         return obs
 
-    def _get_info(self):
-        """Collects debugging/info dictionary from each agent."""
+    def _get_info(self) -> Dict[str, Dict]:
+        """Return per-agent info dict for logging/debugging."""
         return {ag.agent_name: ag._get_info() for ag in self.agents}
 
-    def reset(self, seed=None, options=None, start_location="random"):
-        """Resets environment and randomly assigns agent positions."""
-        self._agents_location = []
-        for ag in self.agents:
-            ag._start_location = self._initialize_start_location(loc=start_location)
-            for aj in self.agents:
-                aj._start_location = self._initialize_start_location(loc=start_location)
-                if aj.agent_name != ag.agent_name and np.array_equal(ag._start_location, aj._start_location):
-                    aj._start_location = self._initialize_start_location(loc=start_location)
-            self._agents_location.append(ag._start_location)
+    # -------------------------
+    # Reset / initialization
+    # -------------------------
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None, start_location: str = "random") -> Tuple[Dict, Dict]:
+        """Reset environment and return (observation, info).
 
-        self._obstacle_location = self._initialize_obstacle()
+        Parameters
+        ----------
+        seed : Optional[int]
+            If provided, reseed the internal RNG for deterministic resets.
+        start_location : str or tuple
+            'random' or an explicit location or function to generate starts.
+        """
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+
+        self._agents_location = []
+
+        # Assign unique start positions for agents by sampling without replacement
+        all_positions = [(x, y) for x in range(self.size) for y in range(self.size)]
+        self.rng.shuffle(all_positions)
+
+        for i, ag in enumerate(self.agents):
+            pos = np.array(all_positions[i], dtype=np.int32)
+            ag._agent_location = pos.copy()
+            ag._start_location = pos.copy()
+            self._agents_location.append(pos.copy())
+
+        # Obstacles (avoid agent starts)
+        self._obstacle_location = self._initialize_obstacle(avoid=set((tuple(p) for p in self._agents_location)))
+
         observation = self._get_obs()
         info = self._get_info()
 
@@ -90,71 +159,95 @@ class GridWorldEnv(gym.Env):
 
         return observation, info
 
-    def _initialize_start_location(self, loc="random"):
-        """Generates random or fixed start location for agents."""
-        if loc == 'random':
-            return self.np_random.integers(0, self.size, size=2, dtype=int)
-        else:
-            return np.array(loc)
+    def _initialize_obstacle(self, avoid: Optional[set] = None) -> List[np.ndarray]:
+        """Place obstacles randomly on the grid, avoiding positions in `avoid`.
 
-    def _initialize_obstacle(self):
-        """Placeholder for obstacle initialization."""
-        return []
+        Returns a list of coordinates (numpy arrays).
+        """
+        avoid = avoid or set()
+        cells = [(x, y) for x in range(self.size) for y in range(self.size) if (x, y) not in avoid]
+        self.rng.shuffle(cells)
+        chosen = cells[: max(0, min(len(cells), self._num_obstacles))]
+        return [np.array(c, dtype=np.int32) for c in chosen]
 
-    def _dist_func(self, agent1, agent2):
-        """Euclidean distance between two agents."""
+    # -------------------------
+    # Utilities
+    # -------------------------
+    def _dist_func(self, agent1: Agent, agent2: Agent) -> int:
+        """Euclidean distance (rounded to int) between two agents."""
         return int(np.linalg.norm(agent1._agent_location - agent2._agent_location))
 
-    def _get_reward(self):
-        """Assigns reward to each agent. Default = 0 for all."""
-        get_obs = self._get_obs()
-        dist_coeff = 10
-        dist_lst = []
-        for ag in get_obs:
-            get_obs[ag]['global']
-        return {ag.agent_name: 0 for ag in self.agents}
+    def _get_reward(self) -> Dict[str, float]:
+        """Compute reward for every agent (placeholder: zeros).
 
-    def step(self, action: dict):
+        Override this method to implement game-specific rewards.
         """
-        Executes environment step using actions per agent.
-        Returns updated obs, reward, info and done flags.
+        return {ag.agent_name: 0.0 for ag in self.agents}
+
+    # -------------------------
+    # Step function
+    # -------------------------
+    def step(self, action: Dict[str, int]) -> Dict[str, object]:
+        """Apply actions for every agent and return a multi-agent dict.
+
+        Parameters
+        ----------
+        action : Dict[str,int]
+            Mapping from agent_name -> action index (0..4).
+
+        Returns
+        -------
+        Dict with keys:
+            - 'obs': observation dict
+            - 'reward': reward dict
+            - 'terminated': bool (episode-level)
+            - 'trunc': bool (episode-level)
+            - 'info': info dict
         """
-        agents_mdp = {}
+        # Validate input
+        if not isinstance(action, dict):
+            raise ValueError("`action` must be a dict mapping agent_name -> action_idx")
+
         for ag in self.agents:
-            steps = ag._get_info()['speed']
+            # default noop if missing
+            a = action.get(ag.agent_name, 4)
+            steps = ag._get_info().get("speed", getattr(ag, "agent_speed", 1))
+
+            # movement limited by stamina
             if steps <= ag.stamina:
-                for _ in range(steps):
-                    direction = ag._actions_to_directions[action[ag.agent_name]]
+                for _ in range(int(steps)):
+                    direction = ag._actions_to_directions.get(int(a), np.array([0, 0]))
                     ag._agent_location = np.clip(ag._agent_location + direction, 0, self.size - 1)
+                # consume stamina
+                ag.stamina = max(0, ag.stamina - int(steps))
             else:
-                print("no action")
-                direction = ag._actions_to_directions[4]
+                # cannot move full speed -> noop and regain a bit of stamina
+                direction = ag._actions_to_directions.get(4, np.array([0, 0]))
                 ag._agent_location = np.clip(ag._agent_location + direction, 0, self.size - 1)
-            if action[ag.agent_name] == 4 or steps > ag.stamina:
-                ag.stamina += 1
-                print("in + 1")
-            else:
-                ag.stamina -= steps
-                print("in -",steps)
-            print(ag._get_info()["stamina"])
+                ag.stamina = min(ag.stamina + 1, 100)
 
-
-        agents_mdp['obs'] = self._get_obs()
-        agents_mdp['reward'] = self._get_reward()
-        agents_mdp['terminated'] = False
-        agents_mdp['trunc'] = False
-        agents_mdp['info'] = self._get_info()
+        agents_mdp = {
+            "obs": self._get_obs(),
+            "reward": self._get_reward(),
+            "terminated": False,
+            "trunc": False,
+            "info": self._get_info(),
+        }
 
         if self.render_mode == "human":
             self._render_frame()
 
         return agents_mdp
 
-    def _render_frame(self):
-        """Renders the environment frame using Pygame."""
+    # -------------------------
+    # Rendering
+    # -------------------------
+    def _render_frame(self) -> Optional[np.ndarray]:
+        """Render the current grid to a pygame surface (and display if human).
 
-        pygame.display.set_caption("Simulation")
-
+        Returns an RGB array if render_mode != 'human'.
+        """
+        # Initialize pygame window and clock lazily
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
@@ -164,31 +257,63 @@ class GridWorldEnv(gym.Env):
             self.clock = pygame.time.Clock()
 
         canvas = pygame.Surface((self.window_size, self.window_size))
-        canvas.fill((255, 255, 255))
-        pix_square_size = self.window_size / self.size
+        canvas.fill((255, 255, 255))  # white background
+        pix_square_size = float(self.window_size) / float(self.size)
 
+        # Draw obstacles
+        for obs in self._obstacle_location:
+            ox = int((obs[0] + 0.5) * pix_square_size)
+            oy = int((obs[1] + 0.5) * pix_square_size)
+            r = max(2, int(pix_square_size / 4))
+            pygame.draw.rect(canvas, (50, 50, 50), pygame.Rect(ox - r, oy - r, r * 2, r * 2))
+
+        # Draw agents
         for ag in self.agents:
             ag._draw_agent(canvas, pix_square_size)
 
+        # Draw grid lines (thin black)
+        line_color = (0, 0, 0)
         for x in range(self.size + 1):
-            pygame.draw.line(canvas, 0, (0, pix_square_size * x), (self.window_size, pix_square_size * x), width=3)
-            pygame.draw.line(canvas, 0, (pix_square_size * x, 0), (pix_square_size * x, self.window_size), width=3)
+            pos = int(round(pix_square_size * x))
+            pygame.draw.line(canvas, line_color, (0, pos), (self.window_size, pos), width=1)
+            pygame.draw.line(canvas, line_color, (pos, 0), (pos, self.window_size), width=1)
 
         if self.render_mode == "human":
+            # Blit to window and update display
+            assert self.window is not None
             self.window.blit(canvas, canvas.get_rect())
             pygame.event.pump()
             pygame.display.update()
-            self.clock.tick(self.metadata["render_fps"])
-        else:
-            return np.transpose(np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2))
+            if self.clock is not None:
+                self.clock.tick(self.metadata["render_fps"])
+            return None
 
-    def render(self):
-        """Public render interface."""
+        # Return RGB array for 'rgb_array' mode
+        return np.transpose(np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2))
+
+    def render(self, mode: Optional[str] = None) -> Optional[np.ndarray]:
+        """Public render API. Use mode='rgb_array' to get an image array."""
+        if mode is not None:
+            prev = self.render_mode
+            self.render_mode = mode
+            result = self._render_frame()
+            self.render_mode = prev
+            return result
+
         if self.render_mode == "rgb_array":
             return self._render_frame()
+        return None
 
-    def close(self):
-        """Closes Pygame rendering session."""
+    def close(self) -> None:
+        """Close pygame resources if they were created."""
         if self.window is not None:
-            pygame.display.quit()
-            pygame.quit()
+            try:
+                pygame.display.quit()
+            except Exception:
+                pass
+            try:
+                pygame.quit()
+            except Exception:
+                pass
+            self.window = None
+            self.clock = None
