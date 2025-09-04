@@ -2,7 +2,7 @@
 .vscode/
 
 # Ignore Python virtual environments
-marl-project-venv/
+marl-project-venv2/
 venv/
 
 # Ignore pytest cache
