@@ -63,7 +63,7 @@ def build_agents() -> List[Agent]:
     agent201 = Agent("prey", 3, "PY201_Jerry")
     agent202 = Agent("predator", 1, "PD202_Stuart")
 
-    return [agent101, agent102, agent201, agent202]
+    return [agent201, agent202]
 
 
 # ----------------------
@@ -97,8 +97,6 @@ def assign_total_subteams(agents: List[Agent]) -> None:
 # Policies
 # ----------------------
 
-Policy = Callable[[List[Agent], Dict[str, dict], np.random.Generator, GridWorldEnv], Dict[str, int]]
-
 
 def random_policy(agents: List[Agent], obs: Dict[str, dict], rng: np.random.Generator, env: GridWorldEnv) -> Dict[str, int]:
     """Return a random action for each agent using the environment action_space."""
@@ -106,11 +104,11 @@ def random_policy(agents: List[Agent], obs: Dict[str, dict], rng: np.random.Gene
 
 
 def noop_policy(agents: List[Agent], obs: Dict[str, dict], rng: np.random.Generator, env: GridWorldEnv) -> Dict[str, int]:
-    """Return a 'no-op' (0) action for each agent. Useful for debugging.
+    """Return a 'no-op' (4) action for each agent. Useful for debugging.
 
-    Note: ensure action 0 is a valid no-op in your environment.
+    Note: ensure action 4 is a valid no-op in your environment.
     """
-    return {ag.agent_name: 0 for ag in agents}
+    return {ag.agent_name: 4 for ag in agents}
 
 
 # ----------------------
@@ -124,7 +122,6 @@ def run_simulation(
     render_mode: str = "human",
     steps: int = 100,
     seed: int = 0,
-    policy: Optional[Policy] = None,
     pause: float = 0.01,
 ) -> None:
     """Run a simple simulation loop.
@@ -151,46 +148,43 @@ def run_simulation(
     assign_total_subteams(agents)
 
     env = GridWorldEnv(agents=agents, render_mode=render_mode, size=size, perc_num_obstacle=perc_num_obstacle, seed=seed)
-    rng = np.random.default_rng(seed)
-    policy = policy or random_policy
+
+    obs, info = env.reset(seed=seed)
+
+    for t in range(steps):
+        actions = {agents[0].agent_name: 4, 
+                        agents[1].agent_name: env.action_space.sample()}
+
+        mgp_tuple = env.step(actions)
+
+        # Pretty-print step info if helpers exist
+        if print_mgp_info is not None:
+            try:
+                print_mgp_info(mgp_tuple, t, obs, actions)
+            except Exception:
+                LOGGER.debug("print_mgp_info failed", exc_info=True)
+        else:
+            # Minimal fallback print
+            print(f"Step {t}: actions={actions}, reward={mgp_tuple.get('reward')}")
+
+        # Optional print of helper metric fields
+        print(f"Total captures this episode: {getattr(env, '_captures_total', 'N/A')}")
+        print(f"Captures this step : {getattr(env, '_captures_this_step', 'N/A')}")
+
+        if mgp_tuple.get("terminated"):
+            print("Episode terminated at step", t)
+            break
+
+        obs = mgp_tuple["obs"]
+
+        if render_mode == "human":
+            time.sleep(pause)
 
     try:
-        obs, info = env.reset()
-
-        for t in range(steps):
-            actions = policy(agents, obs, rng, env)
-
-            mgp_tuple = env.step(actions)
-
-            # Pretty-print step info if helpers exist
-            if print_mgp_info is not None:
-                try:
-                    print_mgp_info(mgp_tuple, t, obs, actions)
-                except Exception:
-                    LOGGER.debug("print_mgp_info failed", exc_info=True)
-            else:
-                # Minimal fallback print
-                print(f"Step {t}: actions={actions}, reward={mgp_tuple.get('reward')}")
-
-            # Optional print of helper metric fields
-            print(f"Total captures this episode: {getattr(env, '_captures_total', 'N/A')}")
-            print(f"Captures this step : {getattr(env, '_captures_this_step', 'N/A')}")
-
-            if mgp_tuple.get("terminated"):
-                print("Episode terminated at step", t)
-                break
-
-            obs = mgp_tuple["obs"]
-
-            if render_mode == "human":
-                time.sleep(pause)
-
-    finally:
-        try:
-            env.close()
-        except Exception:
-            LOGGER.debug("Failed to close environment cleanly", exc_info=True)
-        print("Environment closed.")
+        env.close()
+    except Exception:
+        LOGGER.debug("Failed to close environment cleanly", exc_info=True)
+    print("Environment closed.")
 
 
 # ----------------------
@@ -200,10 +194,9 @@ def run_simulation(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run GridWorldEnv demo")
     parser.add_argument("--steps", type=int, default=100, help="Number of simulation steps")
-    parser.add_argument("--size", type=int, default=4, help="Grid size (NxN)")
+    parser.add_argument("--size", type=int, default=8, help="Grid size (NxN)")
     parser.add_argument("--obst", type=float, default=20.0, help="Percentage of obstacles")
     parser.add_argument("--mode", type=str, default="human", choices=["human", "rgb_array"], help="Render mode")
-    parser.add_argument("--policy", type=str, default="random", choices=["random", "noop"], help="Action policy to use")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducibility")
     parser.add_argument("--pause", type=float, default=0.01, help="Pause between frames when running in human mode")
     return parser.parse_args()
@@ -215,9 +208,6 @@ def main() -> None:
 
     agents = build_agents()
 
-    policy_map: Dict[str, Policy] = {"random": random_policy, "noop": noop_policy}
-    selected_policy = policy_map.get(args.policy, random_policy)
-
     run_simulation(
         agents=agents,
         size=args.size,
@@ -225,7 +215,6 @@ def main() -> None:
         render_mode=args.mode,
         steps=args.steps,
         seed=args.seed,
-        policy=selected_policy,
         pause=args.pause,
     )
 

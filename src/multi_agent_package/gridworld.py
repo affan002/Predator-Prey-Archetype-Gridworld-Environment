@@ -1,4 +1,5 @@
 import math
+import random
 from typing import List, Dict, Optional, Tuple
 
 import numpy as np
@@ -171,12 +172,13 @@ class GridWorldEnv(gym.Env):
         # Assign unique start positions for agents by sampling without replacement
         all_positions = [(x, y) for x in range(self.size) for y in range(self.size)]
         self.rng.shuffle(all_positions)
-
+    
         for i, ag in enumerate(self.agents):
-            pos = np.array(all_positions[i], dtype=np.int32)
+            pos = np.array(random.choice(all_positions), dtype=np.int32)
             ag._agent_location = pos.copy()
             ag._start_location = pos.copy()
             self._agents_location.append(pos.copy())
+            # print(f"Agent '{ag.agent_name}', start location: {ag._agent_location}")
 
         # Obstacles (avoid agent starts)
         self._obstacle_location = self._initialize_obstacle(avoid=set((tuple(p) for p in self._agents_location)))
@@ -189,7 +191,7 @@ class GridWorldEnv(gym.Env):
 
         return observation, info
 
-    def _initialize_obstacle(self, avoid: Optional[set] = None) -> List[np.ndarray]:
+    def _initialize_obstacle(self, avoid: Optional[set] = None) -> List[np.ndarray]: #fix randomness
         """Place obstacles randomly on the grid, avoiding positions in `avoid`.
 
         Returns a list of coordinates (numpy arrays).
@@ -210,172 +212,68 @@ class GridWorldEnv(gym.Env):
     
     def _get_reward(self) -> Dict[str, float]:
         """
-        Improved reward with:
-        - capture reward (sparse, large)
-        - per-step distance shaping (PBRS when previous positions are available)
-        - difference-reward approximation for predators (helps credit assignment)
-        - adjacency bonus for surrounding the prey
-        - time penalty for prey (discourage stalling)
-        - obstacle penalty for stepping on obstacles
-        This implementation is defensive: if previous agent positions aren't available
-        (e.g. first step), PBRS contribution is zero.
+        Computes the reward for each agent in the gridworld environment based on:
+        1. Capture:
+            - Predators receive a large positive reward for capturing a prey.
+            - Preys receive an equivalent large negative reward when captured.
+        2. Step cost:
+            - Predators incur a small negative penalty each step (to encourage efficiency).
+        3. Obstacle hit:
+            - Both predators and preys incur a penalty when moving into an obstacle.
+        4. Distance shaping:
+            - Predators are rewarded for decreasing distance to the nearest prey.
+            - Preys are rewarded for increasing distance from the nearest predator.
         """
+
         rewards: Dict[str, float] = {}
-
-        # --- hyperparams (tune these) ---
-        # BALANCED preset (recommended starting point)
-        catch_distance = 0
-        catch_reward = 600.0
-        obstacle_penalty = -5.0
-        prey_time_penalty = -0.02
-        time_penalty_predator = -0.005
-        distance_reward_scale = 0.5
-        pbrs_weight_start = 0.6
-        pbrs_anneal_steps = 50_000       # number of env steps to slowly zero PBRS
-        diff_reward_weight = 0.15
-        adjacency_bonus = 0.25
-        clip_min, clip_max = -1200.0, 1200.0
-        gamma = 0.95
-        lambda_dist = 1.0                    # scaling inside potential
-
-        # Defensive: compute current step count for annealing (if not present, treat as 0)
-        steps = int(getattr(self, "_episode_steps", 0))
-        pbrs_weight = pbrs_weight_start * max(0.0, 1.0 - (steps / float(max(1, pbrs_anneal_steps))))
+        capture_reward = 100.0
+        step_cost = 5
+        obstacle_hit_penalty = 200
+        distance_scale = 0  # scaling factor for distance-based shaping
 
         predators = [ag for ag in self.agents if ag.agent_type.startswith("predator")]
         preys = [ag for ag in self.agents if ag.agent_type.startswith("prey")]
 
-        # grid max euclidean distance
-        max_dist = math.sqrt((self.size - 1) ** 2 + (self.size - 1) ** 2) or 1.0
+        captured_set = set(getattr(self, "_captured_agents", []))
+        obstacle_positions = set(tuple(obs.astype(int)) for obs in getattr(self, "_obstacle_location", []))
 
-        # build quick lookup for current positions
-        cur_pos = {ag.agent_name: np.array(ag._agent_location, dtype=float) for ag in self.agents}
-        prev_pos_list = getattr(self, "_prev_agents_location", None)
-        prev_pos = None
-        if prev_pos_list:
-            # prev positions stored as list in same order as self.agents during reset/step
-            prev_pos = {ag.agent_name: np.array(pp, dtype=float) for ag, pp in zip(self.agents, prev_pos_list)}
+        def manhattan_dist(p1, p2):
+            return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
 
-        # Precompute per-predator "closeness" to prey (higher => better for predator team)
-        # closeness = (max_dist - min_dist) / max_dist in [0..1]
-        predator_closeness = {}
-        for p in predators:
-            if preys:
-                dists = [float(np.linalg.norm(p._agent_location - q._agent_location)) for q in preys]
-                min_d = float(min(dists))
-                predator_closeness[p.agent_name] = (max_dist - min_d) / max_dist
-            else:
-                predator_closeness[p.agent_name] = 0.0
-
-        # team score used for difference reward approx
-        team_score = sum(predator_closeness.values()) if predators else 0.0
-
-        # For predators: precompute team scores without each predator for difference reward
-        team_score_without = {}
-        for p in predators:
-            s_without = sum(v for k, v in predator_closeness.items() if k != p.agent_name)
-            team_score_without[p.agent_name] = s_without
-
-        # Compute rewards per agent
         for ag in self.agents:
             r = 0.0
 
-            # --- Predator logic ---
+            # Capture rewards/penalties
             if ag.agent_type.startswith("predator"):
-                if preys:
-                    # closeness to nearest prey
-                    dists = [float(np.linalg.norm(ag._agent_location - q._agent_location)) for q in preys]
-                    min_d = float(min(dists))
-                    norm_closeness = (max_dist - min_d) / max_dist  # 0..1
-                    # simple dense shaping (normalized)
-                    r += distance_reward_scale * norm_closeness
-
-                    # adjacency bonus (encourages surrounding / cooperating)
-                    # use Manhattan adjacency to encourage grid adjacency behaviour
-                    for q in preys:
-                        manh = int(np.sum(np.abs(ag._agent_location - q._agent_location)))
-                        if 0 < manh <= 1:
-                            r += adjacency_bonus
-                            break
-
-                    # capture
-                    if min_d <= catch_distance:
-                        r += catch_reward
-
-                    # difference reward approx (team contribution)
-                    # D_i ≈ team_score - team_score_without_i  (how much this predator adds to overall closeness)
-                    D_i = team_score - team_score_without.get(ag.agent_name, 0.0)
-                    r += diff_reward_weight * D_i
-
-                    # tiny per-step cost to discourage infinite wandering
-                    r += time_penalty_predator
-
-            # --- Prey logic ---
+                if ag.agent_name in captured_set:
+                    r += capture_reward
+                r -= step_cost
             elif ag.agent_type.startswith("prey"):
-                if predators:
-                    dists = [float(np.linalg.norm(ag._agent_location - p._agent_location)) for p in predators]
-                    min_d = float(min(dists))
-                    # farther -> larger reward for prey
-                    r += distance_reward_scale * (min_d / max_dist)
-                    # capture penalty
-                    if min_d <= catch_distance:
-                        r -= catch_reward
-                # small time penalty to discourage stalling
-                r += prey_time_penalty
+                if ag.agent_name in captured_set:
+                    r -= capture_reward
 
-            # --- obstacle penalty ---
-            if getattr(self, "_obstacle_location", None):
-                if any(np.array_equal(ag._agent_location, obs) for obs in self._obstacle_location):
-                    r += obstacle_penalty
+            # Obstacle penalty: if agent is currently on an obstacle cell
+            if tuple(ag._agent_location) in obstacle_positions:
+                r -= obstacle_hit_penalty
 
-            # --- PBRS shaping based on previous state (if available) ---
-            # Potential per-agent: phi = -lambda_dist * (min_dist / max_dist)  (lower is better for predator)
-            pbrs = 0.0
-            if prev_pos is not None:
-                # current potential
-                if ag.agent_type.startswith("predator"):
-                    if preys:
-                        curr_min = min(float(np.linalg.norm(cur_pos[ag.agent_name] - np.array(q._agent_location))) for q in preys)
-                        phi_curr = -lambda_dist * (curr_min / max_dist)
-                    else:
-                        phi_curr = 0.0
-                elif ag.agent_type.startswith("prey"):
-                    if predators:
-                        curr_min = min(float(np.linalg.norm(cur_pos[ag.agent_name] - np.array(p._agent_location))) for p in predators)
-                        # for prey, larger distance is better -> flip sign so higher potential when farther
-                        phi_curr = +lambda_dist * (curr_min / max_dist)
-                    else:
-                        phi_curr = 0.0
-                else:
-                    phi_curr = 0.0
+            # Distance-based shaping
+            if ag.agent_type.startswith("predator") and preys:
+                # reward closer distance to nearest prey
+                dists = [manhattan_dist(ag._agent_location, prey._agent_location) for prey in preys]
+                nearest_dist = min(dists)
+                r += -distance_scale * nearest_dist
 
-                # previous potential (if we have previous position for that agent)
-                if ag.agent_name in prev_pos:
-                    if ag.agent_type.startswith("predator"):
-                        if preys:
-                            prev_min = min(float(np.linalg.norm(prev_pos[ag.agent_name] - np.array(q._agent_location))) for q in preys)
-                            phi_prev = -lambda_dist * (prev_min / max_dist)
-                        else:
-                            phi_prev = 0.0
-                    elif ag.agent_type.startswith("prey"):
-                        if predators:
-                            prev_min = min(float(np.linalg.norm(prev_pos[ag.agent_name] - np.array(p._agent_location))) for p in predators)
-                            phi_prev = +lambda_dist * (prev_min / max_dist)
-                        else:
-                            phi_prev = 0.0
-                    else:
-                        phi_prev = 0.0
+            elif ag.agent_type.startswith("prey") and predators:
+                # reward being further from nearest predator
+                dists = [manhattan_dist(ag._agent_location, pred._agent_location) for pred in predators]
+                nearest_dist = min(dists)
+                r += distance_scale * nearest_dist
 
-                    # shaping reward F = gamma * phi(curr) - phi(prev)
-                    pbrs = (gamma * phi_curr - phi_prev) * pbrs_weight
-                    r += pbrs
-
-            # --- final clipping and bookkeeping ---
-            # clip for numerical stability
-            r = float(np.clip(r, clip_min, clip_max))
             rewards[ag.agent_name] = r
 
         return rewards
+        
+
 
 
 
@@ -398,7 +296,7 @@ class GridWorldEnv(gym.Env):
 
         # Behaviour flags (default safe values)
         allow_sharing = bool(getattr(self, "allow_cell_sharing", True))
-        block_by_obstacle = bool(getattr(self, "block_agents_by_obstacles", True))
+        block_by_obstacle = bool(getattr(self, "block_agents_by_obstacles", False))
 
         # Validate input
         if not isinstance(action, dict):
@@ -535,7 +433,7 @@ class GridWorldEnv(gym.Env):
         self._episode_steps += 1
 
         # build mdp return; terminate episode if a capture happened this step
-        terminated_flag = False # bool(self._captures_this_step > 0)
+        terminated_flag = self._captures_this_step > 0
 
         agents_mdp = {
             "obs": self._get_obs(),

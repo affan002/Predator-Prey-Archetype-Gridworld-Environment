@@ -50,7 +50,7 @@ class Agent(gym.Env):
         if self.agent_type == "predator":
             self.agent_speed = 1
         elif self.agent_type == "prey":
-            self.agent_speed = 3
+            self.agent_speed = 1
         else:
             self.agent_speed = 1
 
@@ -62,6 +62,7 @@ class Agent(gym.Env):
 
         # Agent location as numpy array: [x, y] (grid coordinates)
         self._agent_location = np.array([0, 0])
+        self._start_location = np.array([0, 0])
 
         # Optional: set this externally to help color spacing; fallback will be used.
         self.total_subteams: int = getattr(self, "total_subteams", 5)
