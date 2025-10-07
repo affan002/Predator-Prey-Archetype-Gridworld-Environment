@@ -120,10 +120,14 @@ class GridWorldEnv(gym.Env):
             distances: Dict[str, int] = {}
             obstacle_distances: Dict[str, int] = {}
 
+            def _dist_func(agent1: Agent, agent2: Agent) -> int:
+                """Euclidean distance (rounded to int) between two agents."""
+                return int(np.linalg.norm(agent1._agent_location - agent2._agent_location))
+
             # Distances to other agents
             for ag2 in self.agents:
                 if ag.agent_name != ag2.agent_name:
-                    distances[ag2.agent_name] = self._dist_func(ag, ag2)
+                    distances[ag2.agent_name] = _dist_func(ag, ag2)
 
             # Distances to obstacles (indexed) from self._obstacle_location
             if getattr(self, "_obstacle_location", None):
@@ -203,16 +207,72 @@ class GridWorldEnv(gym.Env):
         return [np.array(c, dtype=np.int32) for c in chosen]
 
     # -------------------------
-    # Utilities
+    # Potential-based reward shaping
     # -------------------------
-    def _dist_func(self, agent1: Agent, agent2: Agent) -> int:
-        """Euclidean distance (rounded to int) between two agents."""
-        return int(np.linalg.norm(agent1._agent_location - agent2._agent_location))
+    def _distance_potential(self, predators, preys,weight) -> Dict[str, float]:
+        # !!! obs: agent local positions only - 1prey, 1pred!!!
+        
+        dist_potential : Dict[str, float] = {}
+
+        def manhattan_dist(p1, p2):
+            return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+        
+        for ag in self.agents:
+            r = 0.0
+
+            # Distance-based shaping
+            if ag.agent_type.startswith("predator"):
+                # reward closer distance to nearest prey
+                # dists = [manhattan_dist(ag._agent_location, prey._agent_location) for prey in preys]
+                # nearest_dist = min(dists)
+                dist = manhattan_dist(predators,preys)
+                r -= weight * dist
+
+            elif ag.agent_type.startswith("prey"):
+                # reward being further from nearest predator
+                # dists = [manhattan_dist(ag._agent_location, pred._agent_location) for pred in predators]
+                # nearest_dist = min(dists)
+                dist = manhattan_dist(predators,preys)
+                r += weight * dist
+
+            dist_potential[ag.agent_name] = r
+
+        return dist_potential
     
     
-    def _get_reward(self) -> Dict[str, float]:
+
+    def potential_reward(self, state) ->  Dict[str, float]:
+        """Calculate the Potential-Based Reward Shaping (PBRS) value for the obs.
+
+        !!! obs: agent local positions only - 1 prey, 1 pred !!!
+
+        This function computes a shaping reward based on the distances between predators and preys.
+        The reward is designed to encourage predators to move closer to preys and preys to move away from predators.
+
+        Returns
+        -------
+        Dict[str, float]
+            The computed PBRS value for the current state for each agent.
+            {'agent_name': PBRS value, ...}
         """
-        Computes the reward for each agent in the gridworld environment based on:
+        pbrs_value = {ag.agent_name: 0.0 for ag in self.agents}
+
+        # print(state)
+        predator = state['predator']
+        prey = state['prey']
+        
+
+        dist_potential = self._distance_potential(predator, prey, weight=1.0)
+
+
+        for ag in self.agents:
+            pbrs_value[ag.agent_name] += dist_potential[ag.agent_name]
+                                                       
+        return pbrs_value                                           
+
+    def base_reward(self) -> Dict[str, float]: # name changed to base-reward
+        """
+        Computes the reward for each agent in the gridworld environment based on (states, not obs):
         1. Capture:
             - Predators receive a large positive reward for capturing a prey.
             - Preys receive an equivalent large negative reward when captured.
@@ -220,16 +280,14 @@ class GridWorldEnv(gym.Env):
             - Predators incur a small negative penalty each step (to encourage efficiency).
         3. Obstacle hit:
             - Both predators and preys incur a penalty when moving into an obstacle.
-        4. Distance shaping:
-            - Predators are rewarded for decreasing distance to the nearest prey.
-            - Preys are rewarded for increasing distance from the nearest predator.
         """
 
         rewards: Dict[str, float] = {}
+
+        # base rewards parameter
         capture_reward = 100.0
-        step_cost = 5
         obstacle_hit_penalty = 200
-        distance_scale = 0  # scaling factor for distance-based shaping
+        step_cost = 5
 
         predators = [ag for ag in self.agents if ag.agent_type.startswith("predator")]
         preys = [ag for ag in self.agents if ag.agent_type.startswith("prey")]
@@ -255,19 +313,6 @@ class GridWorldEnv(gym.Env):
             # Obstacle penalty: if agent is currently on an obstacle cell
             if tuple(ag._agent_location) in obstacle_positions:
                 r -= obstacle_hit_penalty
-
-            # Distance-based shaping
-            if ag.agent_type.startswith("predator") and preys:
-                # reward closer distance to nearest prey
-                dists = [manhattan_dist(ag._agent_location, prey._agent_location) for prey in preys]
-                nearest_dist = min(dists)
-                r += -distance_scale * nearest_dist
-
-            elif ag.agent_type.startswith("prey") and predators:
-                # reward being further from nearest predator
-                dists = [manhattan_dist(ag._agent_location, pred._agent_location) for pred in predators]
-                nearest_dist = min(dists)
-                r += distance_scale * nearest_dist
 
             rewards[ag.agent_name] = r
 
@@ -437,7 +482,7 @@ class GridWorldEnv(gym.Env):
 
         agents_mdp = {
             "obs": self._get_obs(),
-            "reward": self._get_reward(),
+            "reward": self.base_reward(),
             "terminated": terminated_flag,
             "trunc": False,
             "info": self._get_info(),

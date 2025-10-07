@@ -50,7 +50,7 @@ class Agent(gym.Env):
         if self.agent_type == "predator":
             self.agent_speed = 1
         elif self.agent_type == "prey":
-            self.agent_speed = 1
+            self.agent_speed = 3
         else:
             self.agent_speed = 1
 

@@ -24,12 +24,19 @@ from typing import Tuple
 
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 from multi_agent_package.gridworld import GridWorldEnv
 from multi_agent_package.agents import Agent
 
 LOGGER = logging.getLogger("iql_trainer")
 
+################ wandb setup #######################
+wandb.init(project="MARL-Predator-Prey-Project", sync_tensorboard = True)
+
+wandb_path = "baselines/IQL/logs/"
+wandb.tensorboard.patch(root_logdir=wandb_path)
+###################################################
 
 def setup_logging(level=logging.INFO):
     logging.basicConfig(
@@ -72,8 +79,9 @@ def train(
     eps_start: float = 1.0,
     eps_end: float = 0.1,
     eps_decay: float = 0.99,
+    save_path: str = "baselines/IQL",
     grid_size: int = 8,
-    save_path: str = "baselines/IQL/iql_qs.npz",
+    
     seed: int = 0,
 ):
     rng = np.random.default_rng(seed)
@@ -81,10 +89,18 @@ def train(
     predator = Agent(agent_name="predator", agent_team=1, agent_type="predator")
     prey = Agent(agent_name="prey", agent_team=2, agent_type="prey")
 
+
+    agents = [predator, prey]
+    
+
     # prey is fixed: will always choose noop (action=4)
     env, n_states, n_actions = make_env_and_meta(predator, prey, grid_size, seed)
 
-    Q = init_q_table(n_states, n_actions)
+    Q = {}
+    save_path_Q = {}
+    for ag in agents:
+        Q[ag.agent_name] = init_q_table(n_states, n_actions)
+        save_path_Q[ag.agent_name] = os.path.join(os.path.dirname(save_path), str(ag.agent_name) , "iql_q_table.npz")
 
     eps = eps_start
     rewards_per_ep = []
@@ -95,6 +111,10 @@ def train(
     log_dir = os.path.join(os.path.dirname(save_path) or ".", "logs", timestamp)
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir=log_dir)
+   
+
+    # Before training loop
+    rewards_per_ep = {ag.agent_name: [] for ag in agents}
 
     for ep in range(1, episodes + 1):
         obs, _ = env.reset()
@@ -116,25 +136,49 @@ def train(
                 + prey_y
             )
 
-            # predator chooses action
-            a = epsilon_greedy_action(Q[s], n_actions, rng, eps)
+            # predator/prey chooses action
+            a = {}
+            actions = {}
+            for ag in agents:
+                a[ag.agent_name] = epsilon_greedy_action(Q[ag.agent_name][s], n_actions, rng, eps)
+                actions[ag.agent_name] = a[ag.agent_name]
 
-            # prey always noop/random
-            actions = {predator.agent_name: a, prey.agent_name: env.action_space.sample()}
+
+            # actions[prey.agent_name] = 4  # prey no-op
+
+            # a = epsilon_greedy_action(Q[s], n_actions, rng, eps) <-- old code
+
+
+            
+            # old code --> actions = {predator.agent_name: a, prey.agent_name: env.action_space.sample()} # prey --> static or random or policy
 
             # step
             mgp = env.step(actions)
             next_obs, rewards = mgp["obs"], mgp["reward"]
 
-            r = float(rewards.get(predator.agent_name, 0.0))
-            total_reward += r
+            r = {}
+            total_reward = {ag.agent_name: 0.0 for ag in agents}
+            for ag in agents:
+                r[ag.agent_name] = float(rewards[ag.agent_name])
+                total_reward[ag.agent_name] += r[ag.agent_name]
+            
+            # old code:
+            # r_prey = float(rewards.get(prey.agent_name, 0.0))
+            # total_reward_pred += r_pred
+            # total_reward_prey += r_prey
 
             # --- next state index ---
             pos_pred_next = next_obs[predator.agent_name]["local"]
             pos_prey_next = next_obs[prey.agent_name]["local"]
 
+    
             pred_x2, pred_y2 = int(pos_pred_next[0]), int(pos_pred_next[1])
             prey_x2, prey_y2 = int(pos_prey_next[0]), int(pos_prey_next[1])
+
+            current_state = {predator.agent_name: pos_pred, prey.agent_name: pos_prey}
+            next_state = {predator.agent_name: pos_pred_next, prey.agent_name: pos_prey_next}
+            
+            
 
             s2 = (
                 pred_x2 * grid_size * grid_size * grid_size
@@ -143,8 +187,22 @@ def train(
                 + prey_y2
             )
 
+           
+            current_potential = env.potential_reward(current_state)
+            next_potential = env.potential_reward(next_state)
+
+
+            # old code:
+            # current_potential_prey = env.potential_reward(current_state).get(predator.agent_name, 0.0)
+            # next_potential_prey = env.potential_reward(next_state).get(predator.agent_name, 0.0)
+
             # update Q
-            Q[s, a] += alpha * (r + gamma * np.max(Q[s2]) - Q[s, a])
+            for ag in agents:
+                Q[ag.agent_name][s, a[ag.agent_name]] += alpha * (r[ag.agent_name] 
+                                                        + (gamma * next_potential[ag.agent_name]) - current_potential[ag.agent_name]
+                                                        + gamma * np.max(Q[ag.agent_name][s2]) - Q[ag.agent_name][s, a[ag.agent_name]]
+                                                        )
+
 
             if mgp.get("terminated", False):
                 ep_len = t + 1
@@ -153,7 +211,10 @@ def train(
             obs = next_obs
 
         # episode bookkeeping
-        rewards_per_ep.append(total_reward)
+        # After each episode
+        for ag in agents:
+            rewards_per_ep[ag.agent_name].append(total_reward[ag.agent_name])
+        # rewards_per_ep.append(total_reward)
         episode_lengths.append(ep_len)
 
         # captures: env._captures_total is cumulative since last reset; since we reset at episode start,
@@ -162,41 +223,50 @@ def train(
         captures_per_ep.append(captures_this_episode)
 
         # TensorBoard logging: per-episode scalars
-        writer.add_scalar("episode/length", ep_len, ep)
-        writer.add_scalar("episode/total_reward", total_reward, ep)
-        writer.add_scalar("episode/captures", captures_this_episode, ep)
+        for ag in agents:
+            writer.add_scalar("episode/length", ep_len, ep)
+            # writer.add_scalar("episode/total_reward", total_reward[ag.agent_name], ep)
+            # writer.add_scalar("episode/captures", captures_this_episode, ep)
 
-        # Running means (window=100)
-        window = 100
-        mean_reward_running = float(np.mean(rewards_per_ep[-window:])) if rewards_per_ep else 0.0
+            # Running means (window=100)
+            window = 100
+            mean_reward_running = float(np.mean(rewards_per_ep[ag.agent_name][-window:])) if rewards_per_ep[ag.agent_name] else 0.0
+            writer.add_scalar(f"mean/{ag.agent_name}/reward", mean_reward_running, ep)
+
         mean_captures_running = float(np.mean(captures_per_ep[-window:])) if captures_per_ep else 0.0
-
-        writer.add_scalar("mean/reward", mean_reward_running, ep)
+        writer.add_scalar("episode/captures", captures_this_episode, ep)        
         writer.add_scalar("mean/captures", mean_captures_running, ep)
 
         # decay epsilon every 100 episodes
         if ep % 100 == 0:
             eps = max(eps_end, eps * eps_decay)
-            avg = np.mean(rewards_per_ep[-100:]) if len(rewards_per_ep) >= 1 else 0.0
-            LOGGER.info("Ep %d | eps=%.3f | avg reward(last100)=%.2f | mean captures(last100)=%.2f", ep, eps, avg, mean_captures_running)
+            avg = {}
+            for ag in agents:
+                avg[ag.agent_name] = np.mean(rewards_per_ep[ag.agent_name][-100:]) if len(rewards_per_ep[ag.agent_name]) >= 1 else 0.0
+            avg_pred = avg.get(predator.agent_name, 0.0)
+            avg_prey = avg.get(prey.agent_name, 0.0)
+            LOGGER.info("Ep %d | eps=%.3f | Predator avg reward(last100)=%.2f | Prey avg reward(last100)=%.2f | mean captures(last100)=%.2f", ep, eps, avg_pred, avg_prey, mean_captures_running)
 
         # flush periodically
         if ep % 10 == 0:
             writer.flush()
+    
+        if ep % 1000 == 0:
+            for ag in agents:
+                save_q_table(save_path_Q[ag.agent_name], Q[ag.agent_name])
 
-    save_q_table(save_path, Q)
     writer.close()
     LOGGER.info("Training done. Final epsilon=%.3f", eps)
 
 
 def parse_args():
     p = argparse.ArgumentParser("Train predator-prey (1 predator learns, prey fixed)")
-    p.add_argument("--episodes", type=int, default=20000)
+    p.add_argument("--episodes", type=int, default=40000)
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--alpha", type=float, default=0.25)
     p.add_argument("--gamma", type=float, default=0.95)
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--save-path", type=str, default="baselines/IQL/iql_qs.npz")
+    p.add_argument("--save-path", type=str, default="baselines/IQL/")
     return p.parse_args()
 
 
