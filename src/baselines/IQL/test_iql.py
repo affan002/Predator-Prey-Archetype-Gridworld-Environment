@@ -1,11 +1,15 @@
 """
-Simplified tester / visualizer for tabular IQL Q-tables (discrete grid state only).
+Simplified tester / visualizer for tabular
+IQL Q-tables (discrete grid state only).
 
-This version assumes that the Q-table was trained with predator's state = cell index (x*size + y).
+This version assumes that the Q-table was trained with
+predator's state = cell index (x*size + y).
+
 Prey is fixed to action 4 (no-op).
 
 Usage:
-python test_iql_cleaned.py --file baselines/IQL/iql_qs.npz --size 8 --episodes 5 --pause 0.05
+python test_iql_cleaned.py --file baselines/IQL/iql_qs.npz\
+                           --size 8 --episodes 5 --pause 0.05
 """
 
 import argparse
@@ -22,7 +26,8 @@ LOGGER = logging.getLogger("test_iql")
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    logging.basicConfig(level=level, format="[%(asctime)s] %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=level, format="[%(asctime)s] %(levelname)s - %(message)s")
 
 
 def make_agents() -> tuple[Agent, Agent]:
@@ -40,10 +45,15 @@ def try_load_qs(file_path: str) -> Dict[str, np.ndarray]:
                 name = key[2:] if key.startswith("Q_") else key
                 qs[name] = arr.astype(np.float32)
         if not qs:
-            raise RuntimeError(f"No valid Q-table arrays found in '{file_path}'. Keys: {list(data.files)}")
+            raise RuntimeError(
+                f"No valid Q-table arrays found in '{file_path}'.\
+                  Keys: {list(data.files)}")
         return qs
 
-def state_index_from_obs(obs: dict, predator: Agent, prey: Agent, size: int) -> int:
+
+def state_index_from_obs(
+    obs: dict, predator: Agent, prey: Agent, size: int
+) -> int:
     """
     Build state index using predator + prey positions.
     Maps (pred_x, pred_y, prey_x, prey_y) -> unique integer index.
@@ -63,6 +73,19 @@ def state_index_from_obs(obs: dict, predator: Agent, prey: Agent, size: int) -> 
 
 
 def choose_action(agent: Agent, q_table: np.ndarray, s_idx: int) -> int:
+    """
+    Selects an action for the given agent based on the Q-table and current state index.
+    If the agent is of type "prey", always returns the fixed no-op action (4).
+    If the state index is out of bounds, logs a warning and returns a random valid action.
+    Otherwise, selects the action with the highest Q-value for the given state.
+    Args:
+        agent (Agent): The agent for which to choose an action.
+                       Must have an optional 'agent_type' attribute.
+        q_table (np.ndarray): The Q-table with shape (num_states, num_actions).
+        s_idx (int): The current state index.
+    Returns:
+        int: The chosen action index.
+    """
     if getattr(agent, "agent_type", "") == "prey":
         return 4  # fixed no-op
     if s_idx < 0 or s_idx >= q_table.shape[0]:
@@ -83,11 +106,13 @@ def run_test(
 
     prey, predator = make_agents()
     agents = [prey, predator]
-    env = GridWorldEnv(agents=agents, render_mode="human", size=size, perc_num_obstacle=10)
+    env = GridWorldEnv(agents=agents, render_mode="human",
+                       size=size, perc_num_obstacle=10)
 
     try:
         for ep in range(1, episodes + 1):
-            obs, info = env.reset()
+            # replacing info with _ since it is unused
+            obs, _ = env.reset()
             LOGGER.info("Test episode %d/%d", ep, episodes)
 
             for t in range(1, max_steps + 1):
@@ -107,12 +132,18 @@ def run_test(
                     q_table = qs.get(ag.agent_name)
                     if q_table is None:
                         # fall back to key matching
-                        for k in qs.keys():
-                            if k.startswith(ag.agent_name) or k.endswith(ag.agent_name):
+                        for k, _ in qs.items():
+                            if (
+                                k.startswith(ag.agent_name)
+                                or k.endswith(ag.agent_name)
+                            ):
                                 q_table = qs[k]
                                 break
                     if q_table is None:
-                        raise RuntimeError(f"No Q-table for agent '{ag.agent_name}'. Keys: {list(qs.keys())}")
+                        raise RuntimeError(
+                            f"No Q-table for agent '{ag.agent_name}'. "
+                            f"Keys: {list(qs.keys())}"
+                        )
 
                     a = choose_action(ag, q_table, s_idx)
                     actions[ag.agent_name] = a
@@ -133,6 +164,17 @@ def run_test(
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parses command-line arguments for testing IQL-trained agents with discrete state spaces.
+    Returns:
+        argparse.Namespace: Parsed arguments with the following attributes:
+            file (str): Path to the file containing IQL Q-values (default: "baselines/IQL/iql_qs.npz").
+            size (int): Size of the environment or grid (default: 8).
+            episodes (int): Number of episodes to run (default: 3).
+            pause (float): Pause duration between steps in seconds (default: 0.05).
+            max_steps (int): Maximum number of steps per episode (default: 100).
+    """
+
     p = argparse.ArgumentParser("Test IQL-trained agents (discrete state)")
     p.add_argument("--file", type=str, default="baselines/IQL/iql_qs.npz")
     p.add_argument("--size", type=int, default=8)
@@ -145,4 +187,5 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     setup_logging()
     args = parse_args()
-    run_test(q_file=args.file, size=args.size, episodes=args.episodes, max_steps=args.max_steps, pause=args.pause)
+    run_test(q_file=args.file, size=args.size, episodes=args.episodes,
+             max_steps=args.max_steps, pause=args.pause)
