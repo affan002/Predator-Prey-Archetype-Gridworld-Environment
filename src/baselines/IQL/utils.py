@@ -11,14 +11,23 @@ from multi_agent_package.agents import Agent
 # Checkpoint utilities
 # ----------------------
 
-def save_checkpoint(path: str, Qs: Dict[str, np.ndarray], eps: float, ep: int, capture_count: int, prey_totals: list, pred_totals: list) -> None:
+def save_checkpoint(
+    path: str,
+    q_values: Dict[str, np.ndarray],
+    eps: float,
+    ep: int,
+    capture_count: int,
+    prey_totals: list,
+    pred_totals: list
+) -> None:
     """Save Q-tables and lightweight metadata to an .npz checkpoint file.
 
-    Qs are saved under keys prefixed with 'Q_'. Metadata are saved as small
-    numpy arrays so np.load can read them back.
+    q_values are saved under keys prefixed with 'Q_'.
+    Metadata are saved as small numpy arrays so
+    np.load can read them back.
     """
     save_dict = {}
-    for name, arr in Qs.items():
+    for name, arr in q_values.items():
         save_dict[f"Q_{name}"] = arr
 
     # metadata
@@ -38,7 +47,7 @@ def save_checkpoint(path: str, Qs: Dict[str, np.ndarray], eps: float, ep: int, c
 
 
 def load_checkpoint(path: str) -> Tuple[Dict[str, np.ndarray], Dict]:
-    """Load checkpoint .npz and return (Qs, metadata_dict).
+    """Load checkpoint .npz and return (q_values, metadata_dict).
 
     Returns empty dicts if path does not exist.
     """
@@ -46,23 +55,30 @@ def load_checkpoint(path: str) -> Tuple[Dict[str, np.ndarray], Dict]:
         raise FileNotFoundError(path)
 
     data = np.load(path, allow_pickle=True)
-    Qs: Dict[str, np.ndarray] = {}
+    # refactored variable name to suit naming convention
+    q_values: Dict[str, np.ndarray] = {}
     for k in data.files:
         if k.startswith("Q_"):
             name = k[2:]
-            Qs[name] = data[k]
+            q_values[name] = data[k]
 
     metadata = {}
     # safe reads with defaults
-    metadata["eps"] = float(data["eps"].tolist()) if "eps" in data.files else None
+    metadata["eps"] = float(
+        data["eps"].tolist()) if "eps" in data.files else None
     metadata["ep"] = int(data["ep"].tolist()) if "ep" in data.files else None
-    metadata["capture_count"] = int(data["capture_count"].tolist()) if "capture_count" in data.files else 0
-    metadata["prey_totals"] = data["prey_totals"].tolist() if "prey_totals" in data.files else []
-    metadata["pred_totals"] = data["pred_totals"].tolist() if "pred_totals" in data.files else []
+    metadata["capture_count"] = int(
+        data["capture_count"].tolist()) if "capture_count" in data.files else 0
+    metadata["prey_totals"] = data["prey_totals"].tolist(
+    ) if "prey_totals" in data.files else []
+    metadata["pred_totals"] = data["pred_totals"].tolist(
+    ) if "pred_totals" in data.files else []
 
-    print(f"[checkpoint] loaded <- {path} (episodes so far: {metadata.get('ep')})")
-    return Qs, metadata
-
+    print(
+        f"[checkpoint] loaded <- {path} "
+        f"(episodes so far: {metadata.get('ep')})"
+    )
+    return q_values, metadata
 
 
 # ----------------------
@@ -70,6 +86,7 @@ def load_checkpoint(path: str) -> Tuple[Dict[str, np.ndarray], Dict]:
 # ----------------------
 
 def make_agents() -> Tuple[Agent, Agent]:
+    """Returns a tuple containing a prey and a predator"""
     prey = Agent("prey", 1, "prey_1")
     predator = Agent("predator", 1, "predator_1")
     return prey, predator
@@ -90,7 +107,8 @@ def global_joint_state_index(
     """
     Create a compact joint-state index using:
       - own position (ax,ay) encoded as a_idx = ax*size + ay
-      - distance to other agent (from dist_agents[other_name]) discretized to integer bins
+      - distance to other agent (from dist_agents[other_name])
+        discretized to integer bins
 
     Returns index in range [0, n_cells * (max_dist+1) - 1].
     """

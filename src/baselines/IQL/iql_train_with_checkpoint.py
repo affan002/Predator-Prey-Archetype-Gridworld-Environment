@@ -38,12 +38,17 @@ LOGGER = logging.getLogger("iql_trainer")
 # ----------------- wandb setup --------------------
 wandb.init(project="MARL-Predator-Prey-Project", sync_tensorboard=True)
 
-wandb_path = "baselines/IQL/logs/"
-wandb.tensorboard.patch(root_logdir=wandb_path)
+# renamed to follow pep8 naming convention of global variables
+WANDB_PATH = "baselines/IQL/logs/"
+wandb.tensorboard.patch(root_logdir=WANDB_PATH)
 # --------------------------------------------------
 
 
 def setup_logging(level=logging.INFO):
+    """
+    Configures the logging settings for the application
+    """
+
     logging.basicConfig(
         level=level,
         format="[%(asctime)s] %(levelname)s - %(message)s",
@@ -54,6 +59,16 @@ def setup_logging(level=logging.INFO):
 def make_env_and_meta(
         predator: Agent, prey: Agent, grid_size: int, seed: int
 ) -> Tuple[GridWorldEnv, int, int]:
+    """
+    Creates a GridWorld environment with a predator and prey agent, and returns the environment along with the number of possible states and actions.
+    Args:
+        predator (Agent): The predator agent.
+        prey (Agent): The prey agent.
+        grid_size (int): The size of the grid.
+        seed (int): Random seed for environment reproducibility.
+    Returns:
+        Tuple[GridWorldEnv, int, int]: The environment, number of states, and number of actions.
+    """
     env = GridWorldEnv(
         agents=[prey, predator],
         render_mode=None,
@@ -69,18 +84,35 @@ def make_env_and_meta(
 
 
 def init_q_table(n_states: int, n_actions: int) -> np.ndarray:
+    """
+    Initializes a Q-table for a reinforcement learning agent.
+    """
     return np.zeros((n_states, n_actions), dtype=np.float32)
 
 
 def epsilon_greedy_action(
         q_row: np.ndarray, n_actions: int, rng: np.random.Generator, eps: float
 ) -> int:
+    """
+    Selects an action using the epsilon-greedy strategy.
+    With probability `eps`, selects a random action; otherwise, selects the action with the highest Q-value.
+    Args:
+        q_row (np.ndarray): Array of Q-values for available actions.
+        n_actions (int): Total number of possible actions.
+        rng (np.random.Generator): Random number generator.
+        eps (float): Probability of choosing a random action.
+    Returns:
+        int: Selected action index.
+    """
     if rng.random() < eps:
         return int(rng.integers(0, n_actions))
     return int(np.argmax(q_row))
 
 
 def save_q_table(path: str, Q: np.ndarray):
+    """
+    Saves Q Table in the form of a NumPy .npz file at the specified path.
+    """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     np.savez(path, predator=Q)
     LOGGER.info("Saved Q-table -> %s", path)
@@ -306,6 +338,9 @@ def train(
 
 
 def parse_args():
+    """
+    Parses command-line arguments for training a predator-prey model
+    """
     p = argparse.ArgumentParser(
         "Train predator-prey (1 predator learns, prey fixed)"
     )

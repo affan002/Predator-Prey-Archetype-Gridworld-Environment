@@ -26,17 +26,28 @@ LOGGER = logging.getLogger("test_iql")
 
 
 def setup_logging(level: int = logging.INFO) -> None:
+    """
+    Configures the logging settings for the application
+    """
     logging.basicConfig(
         level=level, format="[%(asctime)s] %(levelname)s - %(message)s")
 
 
 def make_agents() -> tuple[Agent, Agent]:
+    """Returns a tuple containing a prey and a predator"""
     prey = Agent("prey", 1, "prey")
     predator = Agent("predator", 1, "predator")
     return prey, predator
 
 
 def try_load_qs(file_path: str) -> Dict[str, np.ndarray]:
+    """
+    Load Q-table arrays from a .npz file
+    Parameters:
+        file_path (str): Path to the .npz file containing Q-table arrays
+    Returns:
+        Dict[str, np.ndarray]: Dictionary mapping names to Q-table arrays
+    """
     with np.load(file_path, allow_pickle=False) as data:
         qs: Dict[str, np.ndarray] = {}
         for key in data.files:
@@ -101,6 +112,17 @@ def run_test(
     max_steps: int = 250,
     pause: float = 0.05,
 ) -> None:
+    """
+    Runs a test simulation of the GridWorld environment using pre-trained Q-tables for agents.
+    Args:
+        q_file (str): Path to the Q-table file.
+        size (int): Size of the grid world.
+        episodes (int): Number of test episodes to run.
+        max_steps (int): Maximum steps per episode.
+        pause (float): Pause duration between steps for visualization.
+    Returns:
+        None
+    """
     qs = try_load_qs(q_file)
     LOGGER.info("Loaded Q-tables for agents: %s", list(qs.keys()))
 
