@@ -135,7 +135,7 @@ def run_test(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser("Test IQL-trained agents (discrete state)")
     p.add_argument("--file", type=str, default="baselines/IQL/iql_qs.npz")
-    p.add_argument("--size", type=int, default=8)
+    p.add_argument("--size", type=int, default=15)
     p.add_argument("--episodes", type=int, default=3)
     p.add_argument("--pause", type=float, default=0.05)
     p.add_argument("--max-steps", type=int, default=100)

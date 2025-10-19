@@ -12,7 +12,7 @@ import argparse
 import logging
 import time
 from typing import Dict
-
+from pathlib import Path
 import numpy as np
 
 from multi_agent_package.gridworld import GridWorldEnv
@@ -31,17 +31,93 @@ def make_agents() -> tuple[Agent, Agent]:
     return prey, predator
 
 
+def _load_first_q_in_folder(folder: Path) -> Dict[str, np.ndarray]:
+    """Find the first .npz in folder and return any 2D arrays found (key->array)."""
+    for p in sorted(folder.glob("*.npz")):
+        try:
+            with np.load(str(p), allow_pickle=False) as data:
+                for key in data.files:
+                    arr = data[key]
+                    if arr.ndim == 2:
+                        name = key[2:] if key.startswith("Q_") else key
+                        return {name: arr.astype(np.float32)}
+                # If no named 2D arrays, try to assign the first 2D array to the agent
+                for key in data.files:
+                    arr = data[key]
+                    if arr.ndim == 2:
+                        return {p.stem: arr.astype(np.float32)}
+        except Exception as e:
+            LOGGER.warning("Failed to read %s: %s", p, e)
+    return {}
+
+
 def try_load_qs(file_path: str) -> Dict[str, np.ndarray]:
-    with np.load(file_path, allow_pickle=False) as data:
-        qs: Dict[str, np.ndarray] = {}
-        for key in data.files:
-            arr = data[key]
-            if arr.ndim == 2:
-                name = key[2:] if key.startswith("Q_") else key
-                qs[name] = arr.astype(np.float32)
-        if not qs:
-            raise RuntimeError(f"No valid Q-table arrays found in '{file_path}'. Keys: {list(data.files)}")
-        return qs
+    """
+    Load Q-tables for 'prey' and 'predator'.
+
+    Behavior:
+      - If file_path is a directory: looks for subfolders named 'prey' and 'predator'
+        (case-insensitive) and loads the first .npz inside each.
+      - If file_path is a .npz file: loads any 2D arrays inside (ignores keys starting with 'iql_').
+    Returns a dict mapping agent_name -> Q-array.
+    """
+    p = Path(file_path)
+    qs: Dict[str, np.ndarray] = {}
+
+    # If directory, try subfolders 'prey' and 'predator'
+    if p.exists() and p.is_dir():
+        # look for folder names case-insensitively
+        names = {child.name.lower(): child for child in p.iterdir() if child.is_dir()}
+        for agent_key in ("prey", "predator"):
+            folder = names.get(agent_key)
+            if folder:
+                found = _load_first_q_in_folder(folder)
+                if found:
+                    # map any internal key to the canonical agent name
+                    # if file had key 'prey' or 'predator' use that; otherwise set canonical
+                    qarr = next(iter(found.values()))
+                    qs[agent_key] = qarr
+                else:
+                    LOGGER.warning("No Q .npz with a 2D array found in folder: %s", folder)
+            else:
+                LOGGER.debug("No subfolder named '%s' found in %s", agent_key, p)
+
+        # also accept direct .npz files inside dir with agent-name keys
+        # e.g. baselines/IQL/all_qs.npz
+        for f in sorted(p.glob("*.npz")):
+            try:
+                with np.load(str(f), allow_pickle=False) as data:
+                    for key in data.files:
+                        if key.startswith("iql_"):
+                            continue
+                        arr = data[key]
+                        if arr.ndim == 2:
+                            name = key[2:] if key.startswith("Q_") else key
+                            qs.setdefault(name, arr.astype(np.float32))
+            except Exception:
+                continue
+
+    # If a single file is provided
+    elif p.exists() and p.is_file():
+        try:
+            with np.load(str(p), allow_pickle=False) as data:
+                for key in data.files:
+                    if key.startswith("iql_"):  # ignore checkpoint/meta arrays
+                        continue
+                    arr = data[key]
+                    if arr.ndim == 2:
+                        name = key[2:] if key.startswith("Q_") else key
+                        qs[name] = arr.astype(np.float32)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Qs from {p}: {e}") from e
+    else:
+        raise FileNotFoundError(f"No such file or directory: {file_path}")
+
+    if not qs:
+        raise RuntimeError(f"No valid Q-table arrays found under '{file_path}'")
+
+    LOGGER.info("Loaded Q-tables: %s", list(qs.keys()))
+    return qs
 
 def state_index_from_obs(obs: dict, predator: Agent, prey: Agent, size: int) -> int:
     """
@@ -72,7 +148,7 @@ def choose_action(agent: Agent, q_table: np.ndarray, s_idx: int) -> int:
 
 
 def run_test(
-    q_file: str = "baselines/IQL/iql_qs.npz",
+    q_file: str = "baselines/IQL",
     size: int = 8,
     episodes: int = 3,
     max_steps: int = 250,
@@ -134,7 +210,7 @@ def run_test(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser("Test IQL-trained agents (discrete state)")
-    p.add_argument("--file", type=str, default="baselines/IQL/iql_qs.npz")
+    p.add_argument("--file", type=str, default="baselines/IQL")
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--episodes", type=int, default=3)
     p.add_argument("--pause", type=float, default=0.05)

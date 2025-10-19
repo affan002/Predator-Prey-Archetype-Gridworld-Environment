@@ -4,3 +4,4 @@ pygame
 setuptools
 pytest
 torch.utils
+tensorboard
