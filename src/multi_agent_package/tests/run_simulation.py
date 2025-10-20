@@ -57,13 +57,13 @@ def build_agents() -> List[Agent]:
         List of agents in the environment.
     """
     # Example agents with team IDs and human-friendly names
-    agent101 = Agent("prey", 1, "PY101_Tom")
+    agent101 = Agent("predator", 1, "PY101_Tom")
     agent102 = Agent("prey", 2, "PY102_Garfield")
 
     agent201 = Agent("prey", 3, "PY201_Jerry")
     agent202 = Agent("predator", 1, "PD202_Stuart")
 
-    return [agent201, agent202]
+    return [agent201, agent202,agent101, agent102]
 
 
 # ----------------------
@@ -152,8 +152,10 @@ def run_simulation(
     obs, info = env.reset(seed=seed)
 
     for t in range(steps):
-        actions = {agents[0].agent_name: 4, 
-                        agents[1].agent_name: env.action_space.sample()}
+        actions = {agents[0].agent_name: env.action_space.sample(),
+                        agents[1].agent_name: env.action_space.sample(),
+        agents[2].agent_name: env.action_space.sample(),
+        agents[3].agent_name: env.action_space.sample()}
 
         mgp_tuple = env.step(actions)
 
@@ -195,7 +197,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run GridWorldEnv demo")
     parser.add_argument("--steps", type=int, default=100, help="Number of simulation steps")
     parser.add_argument("--size", type=int, default=8, help="Grid size (NxN)")
-    parser.add_argument("--obst", type=float, default=20.0, help="Percentage of obstacles")
+    parser.add_argument("--obst", type=float, default=10.0, help="Percentage of obstacles")
     parser.add_argument("--mode", type=str, default="human", choices=["human", "rgb_array"], help="Render mode")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for reproducibility")
     parser.add_argument("--pause", type=float, default=0.01, help="Pause between frames when running in human mode")

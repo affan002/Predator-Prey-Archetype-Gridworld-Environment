@@ -4,6 +4,7 @@
 # Ignore Python virtual environments
 marl-project-venv2/
 venv/
+marl_venv/
 
 # Ignore pytest cache
 .pytest_cache/
@@ -24,3 +25,16 @@ __pycache__/
 
 # wandb logs
 src/wandb/
+
+# npz tables
+src/baselines/CQL/centeral_cql_q_table.npz
+src/baselines/IQL/predator_1/
+src/baselines/IQL/predator_2/
+src/baselines/IQL/prey_1/
+src/baselines/IQL/prey_2/
+
+
+
+# logs
+src/baselines/CQL/logs/
+src/baselines/IQL/logs/

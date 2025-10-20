@@ -209,35 +209,46 @@ class GridWorldEnv(gym.Env):
     # -------------------------
     # Potential-based reward shaping
     # -------------------------
-    def _distance_potential(self, predators, preys,weight) -> Dict[str, float]:
-        # !!! obs: agent local positions only - 1prey, 1pred!!!
+    def _distance_potential(self, agent_positions: Dict[str, tuple[int, int]], weight: float) -> Dict[str, float]:
+        """
+        Computes distance-based potential rewards for each agent.
         
-        dist_potential : Dict[str, float] = {}
+        Args:
+            agent_positions: Dict mapping agent_name -> (x, y) position.
+            weight: Scaling factor for distance shaping.
+
+        Returns:
+            Dict[str, float]: Potential reward for each agent.
+                - Predators: penalized by distance to nearest prey.
+                - Preys: rewarded for distance from nearest predator.
+        """
+        dist_potential: Dict[str, float] = {}
 
         def manhattan_dist(p1, p2):
             return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
-        
-        for ag in self.agents:
+
+        # Separate predator and prey positions
+        predator_positions = [pos for name, pos in agent_positions.items() if name.startswith("predator")]
+        prey_positions = [pos for name, pos in agent_positions.items() if name.startswith("prey")]
+
+        for name, pos in agent_positions.items():
             r = 0.0
+            if name.startswith("predator"):
+                # Reward closer distance (negative shaping for being far)
+                if prey_positions:
+                    nearest_dist = min(manhattan_dist(pos, prey_pos) for prey_pos in prey_positions)
+                    r -= weight * nearest_dist
 
-            # Distance-based shaping
-            if ag.agent_type.startswith("predator"):
-                # reward closer distance to nearest prey
-                # dists = [manhattan_dist(ag._agent_location, prey._agent_location) for prey in preys]
-                # nearest_dist = min(dists)
-                dist = manhattan_dist(predators,preys)
-                r -= weight * dist
+            elif name.startswith("prey"):
+                # Reward being farther away
+                if predator_positions:
+                    nearest_dist = min(manhattan_dist(pos, pred_pos) for pred_pos in predator_positions)
+                    r += weight * nearest_dist
 
-            elif ag.agent_type.startswith("prey"):
-                # reward being further from nearest predator
-                # dists = [manhattan_dist(ag._agent_location, pred._agent_location) for pred in predators]
-                # nearest_dist = min(dists)
-                dist = manhattan_dist(predators,preys)
-                r += weight * dist
-
-            dist_potential[ag.agent_name] = r
+            dist_potential[name] = r
 
         return dist_potential
+
     
     
 
@@ -257,12 +268,8 @@ class GridWorldEnv(gym.Env):
         """
         pbrs_value = {ag.agent_name: 0.0 for ag in self.agents}
 
-        # print(state)
-        predator = state['predator']
-        prey = state['prey']
-        
-
-        dist_potential = self._distance_potential(predator, prey, weight=1.0)
+        # Compute distance-based potential rewards
+        dist_potential = self._distance_potential(state, weight=0.0)
 
 
         for ag in self.agents:
@@ -341,7 +348,7 @@ class GridWorldEnv(gym.Env):
 
         # Behaviour flags (default safe values)
         allow_sharing = bool(getattr(self, "allow_cell_sharing", True))
-        block_by_obstacle = bool(getattr(self, "block_agents_by_obstacles", False))
+        block_by_obstacle = bool(getattr(self, "block_agents_by_obstacles", True))
 
         # Validate input
         if not isinstance(action, dict):
@@ -478,7 +485,7 @@ class GridWorldEnv(gym.Env):
         self._episode_steps += 1
 
         # build mdp return; terminate episode if a capture happened this step
-        terminated_flag = self._captures_this_step > 0
+        terminated_flag = self._captures_total > 1
 
         agents_mdp = {
             "obs": self._get_obs(),
