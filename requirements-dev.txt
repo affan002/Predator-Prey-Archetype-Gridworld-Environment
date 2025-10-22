@@ -6,8 +6,8 @@ pylint
 pre-commit
 
 # Docs
-mkdocs==1.5.1
-mkdocs-material==10.0.0
+mkdocs
+mkdocs-material
 
 
 # Logging
