@@ -18,7 +18,7 @@ Features
 
 Usage
     cd src
-    python baselines.IQL.iql_train2v2 --episodes 20000 --size 6
+    python -m baselines.IQL.iql_train2v2 --episodes 20000 --size 6
 """
 from __future__ import annotations
 
@@ -137,6 +137,20 @@ def epsilon_greedy_action(
     return int(int(np.argmax(q_row)))
 
 
+def create_experiment_dir(base: str = "experiments", name: str | None = None):
+    """
+    Create a timestamped experiment folder 
+    and return (exp_dir, checkpoints_dir, logs_dir).
+    """
+    now = time.strftime("%Y-%m-%d_%H-%M-%S")
+    safe_name = (name or "run").strip().replace(" ", "_")
+    exp_dir = os.path.join(base, f"{now}_{safe_name}")
+    checkpoints_dir = os.path.join(exp_dir, "checkpoints")
+    logs_dir = os.path.join(exp_dir, "logs")
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
+    return exp_dir, checkpoints_dir, logs_dir
+
 def save_q_table(path: str, Q: np.ndarray) -> None:
     """
     Exports Q table as an .npz file
@@ -189,10 +203,20 @@ def train(
     episode_lengths: List[int] = []
 
     timestamp = time.strftime("%d-%m-%Y_%H-%M-%S")
-    base_path = os.path.dirname(save_path) or "."
-    log_dir = os.path.join(base_path, "logs", timestamp)
+    
+    # create an experiment folder (checkpoints + logs) and use it
+    exp_dir, checkpoints_dir, logs_dir = create_experiment_dir(
+        base=os.path.dirname(save_path) or ".", name="iql_run"
+    )
+    log_dir = os.path.join(logs_dir, timestamp)
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir=log_dir)
+
+    # prepare per-agent checkpoint paths under the experiment checkpoints dir
+    save_path_Q = {
+        name: os.path.join(checkpoints_dir, name, "iql_q_table.npz")
+        for name in agent_names
+    }
 
     window = 100
 
@@ -229,7 +253,6 @@ def train(
 
             # potential shaping
             # use dicts; fall back to zero per-agent if not provided
-            # TODO: test this
             current_state = {n: obs[n]["local"] for n in agent_names}
             next_state = {n: next_obs[n]["local"] for n in agent_names}
             potential_fn = getattr(env, "potential_reward", None)
