@@ -36,6 +36,8 @@ import wandb
 from multi_agent_package.gridworld import GridWorldEnv
 from multi_agent_package.agents import Agent
 
+from .utils import create_experiment_dir, write_experiment_md
+
 LOGGER = logging.getLogger("iql_trainer")
 
 
@@ -121,9 +123,10 @@ def init_q_tables(
 
     Each Q-table is a zero-initialized array of shape (n_states, n_actions)
     """
-    return {
-        name: np.zeros((n_states, n_actions), dtype=np.float32) for name in agent_names
-    }
+    q_tables: Dict[str, np.ndarray] = {}
+    for name in agent_names:
+        q_tables[name] = np.zeros((n_states, n_actions), dtype=np.float32)
+    return q_tables
 
 
 def epsilon_greedy_action(
@@ -135,21 +138,6 @@ def epsilon_greedy_action(
     if rng.random() < eps:
         return int(rng.integers(0, n_actions))
     return int(int(np.argmax(q_row)))
-
-
-def create_experiment_dir(base: str = "experiments", name: str | None = None):
-    """
-    Create a timestamped experiment folder
-    and return (exp_dir, checkpoints_dir, logs_dir).
-    """
-    now = time.strftime("%Y-%m-%d_%H-%M-%S")
-    safe_name = (name or "run").strip().replace(" ", "_")
-    exp_dir = os.path.join(base, f"{now}_{safe_name}")
-    checkpoints_dir = os.path.join(exp_dir, "checkpoints")
-    logs_dir = os.path.join(exp_dir, "logs")
-    os.makedirs(checkpoints_dir, exist_ok=True)
-    os.makedirs(logs_dir, exist_ok=True)
-    return exp_dir, checkpoints_dir, logs_dir
 
 
 def save_q_table(path: str, Q: np.ndarray) -> None:
@@ -205,6 +193,22 @@ def train(
     exp_dir, checkpoints_dir, logs_dir = create_experiment_dir(
         base=os.path.dirname(save_path) or ".", name="iql_run"
     )
+
+    # write a short README.md describing this run
+    params = {
+        "command": f"python -m baselines.IQL.iql_train2v2\
+                    --size {grid_size} --episodes {episodes}",
+        "seed": seed,
+        "alpha": alpha,
+        "gamma": gamma,
+        "eps_start": eps_start,
+        "eps_end": eps_end,
+        "eps_decay": eps_decay,
+        "num_predators": num_predators,
+        "num_preys": num_preys,
+    }
+    write_experiment_md(exp_dir, params)
+
     log_dir = os.path.join(logs_dir, timestamp)
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir=log_dir)
@@ -243,7 +247,9 @@ def train(
             next_obs, rewards = mgp["obs"], mgp["reward"]
 
             # accumulate rewards and prepare next-state index
-            next_positions = [tuple(next_obs[name]["local"]) for name in agent_names]
+            next_positions = []
+            for name in agent_names:
+                next_positions.append(tuple(next_obs[name]["local"]))
             s2 = joint_state_index(next_positions, grid_size)
 
             # potential shaping
@@ -268,7 +274,9 @@ def train(
                 target = (
                     r + gamma * next_pot[name] - current_pot[name] + gamma * next_q_max
                 )
-                Qs[name][s, chosen_actions[name]] += alpha * (target - current_q)
+                Qs[name][s, chosen_actions[name]] = Qs[name][
+                    s, chosen_actions[name]
+                ] + alpha * (target - current_q)
 
             if mgp.get("terminated", False):
                 ep_len = t + 1

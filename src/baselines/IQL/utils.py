@@ -1,3 +1,8 @@
+from typing import Any
+import sys
+import subprocess
+import json
+import time
 import os
 from typing import Dict, Tuple, Optional
 
@@ -129,3 +134,47 @@ def global_joint_state_index(
     dist_bin = int(min(max_dist, max(0, int(round(d)))))
 
     return a_idx * (max_dist + 1) + dist_bin
+
+
+# ----------------------
+# Training experiment folder functions
+# ----------------------
+
+
+def create_experiment_dir(
+    base: str = "experiments", name: str | None = None, params: dict | None = None
+) -> Tuple[str, str, str]:
+    """Create timestamped experiment folder and return (exp_dir, checkpoints_dir, logs_dir)."""
+    params = params or {}
+    now = time.strftime("%Y-%m-%d_%H-%M-%S")
+    safe_name = (name or "run").strip().replace(" ", "_")
+    exp_dir = os.path.join(base, f"{now}_{safe_name}")
+    checkpoints_dir = os.path.join(exp_dir, "checkpoints")
+    logs_dir = os.path.join(exp_dir, "logs")
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
+
+    return exp_dir, checkpoints_dir, logs_dir
+
+
+def write_experiment_md(exp_dir: str, params: dict) -> None:
+    """Write a human-readable README.md describing the run"""
+    md_path = os.path.join(exp_dir, "README.md")
+    lines = [
+        f"# Experiment: {os.path.basename(exp_dir)}",
+        "",
+        f"- Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "## Command",
+        "```",
+        params.get("command", ""),
+        "```",
+        "",
+        "## Parameters",
+    ]
+    for k, v in params.items():
+        if k == "command":
+            continue
+        lines.append(f"- **{k}**: `{v}`")
+    with open(md_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
