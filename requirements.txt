@@ -5,3 +5,6 @@ setuptools
 pytest
 torch.utils
 tensorboard
+black
+flake8
+pylint
