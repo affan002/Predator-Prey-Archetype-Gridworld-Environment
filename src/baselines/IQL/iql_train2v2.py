@@ -20,6 +20,7 @@ Usage
     cd src
     python -m baselines.IQL.iql_train2v2 --episodes 20000 --size 6
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,9 +84,9 @@ def make_agents(num_predators: int = 2, num_preys: int = 2) -> List[Agent]:
             )
         )
     for i in range(1, num_predators + 1):
-        agents.append(Agent(agent_name=f"predator_{i}",
-                            agent_team=i,
-                            agent_type="predator"))
+        agents.append(
+            Agent(agent_name=f"predator_{i}", agent_team=i, agent_type="predator")
+        )
     return agents
 
 
@@ -121,8 +122,7 @@ def init_q_tables(
     Each Q-table is a zero-initialized array of shape (n_states, n_actions)
     """
     return {
-        name: np.zeros((n_states, n_actions), dtype=np.float32)
-        for name in agent_names
+        name: np.zeros((n_states, n_actions), dtype=np.float32) for name in agent_names
     }
 
 
@@ -139,7 +139,7 @@ def epsilon_greedy_action(
 
 def create_experiment_dir(base: str = "experiments", name: str | None = None):
     """
-    Create a timestamped experiment folder 
+    Create a timestamped experiment folder
     and return (exp_dir, checkpoints_dir, logs_dir).
     """
     now = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -150,6 +150,7 @@ def create_experiment_dir(base: str = "experiments", name: str | None = None):
     os.makedirs(checkpoints_dir, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
     return exp_dir, checkpoints_dir, logs_dir
+
 
 def save_q_table(path: str, Q: np.ndarray) -> None:
     """
@@ -187,23 +188,19 @@ def train(
 
     # Prepare save paths per agent
     save_path_Q = {
-        name: os.path.join(
-            os.path.dirname(save_path) or ".", name, "iql_q_table.npz"
-        )
+        name: os.path.join(os.path.dirname(save_path) or ".", name, "iql_q_table.npz")
         for name in agent_names
     }
 
     eps = eps_start
 
     # bookkeeping for TensorBoard
-    per_agent_rewards: Dict[str, List[float]] = {
-        name: [] for name in agent_names
-    }
+    per_agent_rewards: Dict[str, List[float]] = {name: [] for name in agent_names}
     captures_per_ep: List[int] = []
     episode_lengths: List[int] = []
 
     timestamp = time.strftime("%d-%m-%Y_%H-%M-%S")
-    
+
     # create an experiment folder (checkpoints + logs) and use it
     exp_dir, checkpoints_dir, logs_dir = create_experiment_dir(
         base=os.path.dirname(save_path) or ".", name="iql_run"
@@ -246,9 +243,7 @@ def train(
             next_obs, rewards = mgp["obs"], mgp["reward"]
 
             # accumulate rewards and prepare next-state index
-            next_positions = [
-                tuple(next_obs[name]["local"]) for name in agent_names
-            ]
+            next_positions = [tuple(next_obs[name]["local"]) for name in agent_names]
             s2 = joint_state_index(next_positions, grid_size)
 
             # potential shaping
@@ -271,15 +266,9 @@ def train(
                 current_q = Qs[name][s, chosen_actions[name]]
                 next_q_max = float(np.max(Qs[name][s2]))
                 target = (
-                    r
-                    + gamma * next_pot[name]
-                    - current_pot[name]
-                    + gamma * next_q_max
+                    r + gamma * next_pot[name] - current_pot[name] + gamma * next_q_max
                 )
-                Qs[name][s, chosen_actions[name]] += (
-                    alpha
-                    * (target - current_q)
-                )
+                Qs[name][s, chosen_actions[name]] += alpha * (target - current_q)
 
             if mgp.get("terminated", False):
                 ep_len = t + 1
@@ -308,9 +297,7 @@ def train(
         # running means per-agent
         for name in agent_names:
             if per_agent_rewards[name]:
-                mean_reward_running = float(
-                    np.mean(per_agent_rewards[name][-window:])
-                )
+                mean_reward_running = float(np.mean(per_agent_rewards[name][-window:]))
             else:
                 mean_reward_running = 0.0
             writer.add_scalar(f"mean/{name}/reward", mean_reward_running, ep)
@@ -331,8 +318,7 @@ def train(
             )
 
             LOGGER.info(
-                "Ep %d | eps=%.3f | avg(last100) %s | "
-                "mean captures(last100)=%.2f",
+                "Ep %d | eps=%.3f | avg(last100) %s | " "mean captures(last100)=%.2f",
                 ep,
                 eps,
                 avg_str,
@@ -356,6 +342,7 @@ def train(
 
 # ---------------- CLI ----------------
 
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser("Train multi-agent IQL tabular")
     p.add_argument("--episodes", type=int, default=50000)
@@ -364,12 +351,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gamma", type=float, default=0.95)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--save-path", type=str, default="baselines/IQL/")
-    p.add_argument(
-        "--predators",
-        type=int,
-        default=2,
-        help="Number of predators"
-    )
+    p.add_argument("--predators", type=int, default=2, help="Number of predators")
     p.add_argument("--preys", type=int, default=2, help="Number of preys")
     return p.parse_args()
 
