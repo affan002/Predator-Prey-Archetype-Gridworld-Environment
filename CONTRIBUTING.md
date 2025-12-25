@@ -1,4 +1,4 @@
-# Contributing (work in progress)
+# Contributing
 
 ## How to contribute
 
