@@ -1,4 +1,4 @@
--r requirements.txt         # include runtime deps automatically
+# -r requirements.txt         # include runtime deps automatically
 
 black
 flake8
