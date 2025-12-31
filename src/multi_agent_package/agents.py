@@ -1,3 +1,25 @@
+"""
+Agent module for the Predator-Prey Gridworld Environment.
+
+This module defines the :class:`Agent` class, which represents individual
+agents (predators, prey, or custom types) in a multi-agent GridWorld.
+
+Classes
+-------
+Agent
+    A multi-agent GridWorld agent with customizable type, team, and rendering.
+
+Example
+-------
+>>> from multi_agent_package.agents import Agent
+>>> predator = Agent("predator", "predator_1", "Hunter")
+>>> prey = Agent("prey", "prey_1", "Runner")
+>>> print(predator.agent_speed)
+1
+>>> print(prey.agent_speed)
+3
+"""
+
 import math
 from typing import Optional, Tuple, List
 
@@ -20,27 +42,70 @@ class Agent(gym.Env):
         Subteam identifier. Can be an int (e.g., 3) or string like "predator_3".
     agent_name : str
         Human-readable name / unique id for the agent.
+    agent_speed : int
+        Movement speed. Predator=1, Prey=3, Other=1.
+    stamina : int
+        Energy resource (default: 10).
+    action_space : gymnasium.spaces.Discrete
+        Discrete action space with 5 actions.
 
     Notes
     -----
     - Rendering is implemented using pygame primitives.
     - The class provides helper methods to select colors and shapes per subteam.
+    - Actions: 0=Right, 1=Up, 2=Left, 3=Down, 4=Noop
+
+    Examples
+    --------
+    >>> agent = Agent("predator", "predator_1", "Hunter")
+    >>> agent.agent_speed
+    1
+    >>> agent.action_space
+    Discrete(5)
+
+    See Also
+    --------
+    GridWorldEnv : The environment that manages multiple Agent instances.
     """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     def __init__(self, agent_type: str, agent_team, agent_name: str):
         """
-        Initialize the Agent.
+        A simple agent class for a multi-agent GridWorld environment.
 
-        Parameters
+        Attributes
         ----------
         agent_type : str
-            Base role, e.g. "predator" or "prey".
+            Base type (e.g., "predator", "prey", "other").
         agent_team : Union[str, int]
-            Team/subteam identifier (e.g. "predator_1" or 2).
+            Subteam identifier. Can be an int (e.g., 3) or string like "predator_3".
         agent_name : str
-            Agent's display name / id.
+            Human-readable name / unique id for the agent.
+        agent_speed : int
+            Movement speed. Predator=1, Prey=3, Other=1.
+        stamina : int
+            Energy resource (default: 10).
+        action_space : gymnasium.spaces.Discrete
+            Discrete action space with 5 actions.
+
+        Notes
+        -----
+        - Rendering is implemented using pygame primitives.
+        - The class provides helper methods to select colors and shapes per subteam.
+        - Actions: 0=Right, 1=Up, 2=Left, 3=Down, 4=Noop
+
+        Examples
+        --------
+        >>> agent = Agent("predator", "predator_1", "Hunter")
+        >>> agent.agent_speed
+        1
+        >>> agent.action_space
+        Discrete(5)
+
+        See Also
+        --------
+        GridWorldEnv : The environment that manages multiple Agent instances.
         """
         self.agent_type: str = agent_type
         self.agent_team = agent_team
@@ -90,11 +155,54 @@ class Agent(gym.Env):
         }
 
     def _get_obs(self, global_obs: Optional[dict] = None) -> dict:
-        """Return local and optional global observation."""
+        """
+        Get the current observation for this agent.
+
+        Parameters
+        ----------
+        global_obs : dict, optional
+            Global observation from the environment (e.g., other agent positions).
+
+        Returns
+        -------
+        dict
+            Observation with keys:
+
+            - ``"local"``: Agent's position as numpy array [x, y]
+            - ``"global"``: Passed global observation or None
+
+        Examples
+        --------
+        >>> agent = Agent("prey", "prey_1", "P1")
+        >>> agent._agent_location = np.array([3, 4])
+        >>> obs = agent._get_obs()
+        >>> obs["local"]
+        array([3, 4])
+        """
         return {"local": self._agent_location, "global": global_obs}
 
     def _get_info(self) -> dict:
-        """Return info metadata for the agent (useful for logging)."""
+        """
+        Get metadata information about this agent.
+
+        Returns
+        -------
+        dict
+            Information containing:
+
+            - ``"name"``: Agent's display name
+            - ``"type"``: Agent type (predator/prey/other)
+            - ``"team"``: Team identifier
+            - ``"speed"``: Movement speed
+            - ``"stamina"``: Current stamina
+
+        Examples
+        --------
+        >>> agent = Agent("predator", "pred_1", "Hunter")
+        >>> info = agent._get_info()
+        >>> info["speed"]
+        1
+        """
         return {
             "name": self.agent_name,
             "type": self.agent_type,
@@ -158,23 +266,30 @@ class Agent(gym.Env):
     # -------------------------
     def get_agent_color(self, agent_team: Optional[str] = None) -> Tuple[int, int, int]:
         """
-        Compute an RGB color (0-255) for the agent.
+        Compute RGB color based on agent type and subteam.
 
-        The color:
-          - Uses a base hue per `agent_type` (red/green/blue).
-          - Derives subteam index from self.agent_team (or passed agent_team).
-          - Adapts contrast depending on the number of subteams:
-            fewer subteams -> higher spread/contrast.
+        Colors use HSV color space:
+
+        - Predator: Red hue (0°)
+        - Prey: Green hue (120°)
+        - Other: Blue hue (240°)
 
         Parameters
         ----------
-        agent_team : Optional[str]
-            If provided, parse this instead of self.agent_team.
+        agent_team : str or int, optional
+            Override team for color calculation. If None, uses self.agent_team.
 
         Returns
         -------
-        (r, g, b) : Tuple[int, int, int]
-            0-255 RGB color.
+        tuple of (int, int, int)
+            RGB values in range [0, 255].
+
+        Examples
+        --------
+        >>> predator = Agent("predator", "predator_1", "P1")
+        >>> r, g, b = predator.get_agent_color()
+        >>> r > g  # Red-dominant for predators
+        True
         """
         # Decide which team string to parse
         original_team = agent_team if agent_team is not None else self.agent_team
@@ -297,14 +412,18 @@ class Agent(gym.Env):
 
     def _draw_agent(self, canvas: pygame.Surface, pix_square_size: float) -> None:
         """
-        Draw the agent as a colored shape and a centered label.
+        Draw the agent on a pygame canvas.
 
         Parameters
         ----------
         canvas : pygame.Surface
-            The surface to draw on.
+            Surface to draw on.
         pix_square_size : float
             Size of one grid cell in pixels.
+
+        Notes
+        -----
+        Draws a colored shape (based on subteam) with a centered label.
         """
         # Ensure pygame font system is ready
         if not pygame.font.get_init():
