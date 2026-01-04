@@ -61,13 +61,13 @@ class GridWorldEnv(gym.Env):
         Count of agents by type (e.g., ``{"total": 4, "predator": 2, "prey": 2}``).
     action_space : gymnasium.spaces.Discrete
         Discrete action space with 5 actions:
-        
+
         - 0: Right ``[+1, 0]``
         - 1: Up ``[0, +1]``
         - 2: Left ``[-1, 0]``
         - 3: Down ``[0, -1]``
         - 4: Noop ``[0, 0]``
-        
+
     render_mode : str or None
         Current rendering mode (``'human'``, ``'rgb_array'``, or ``None``).
     window_size : int
@@ -110,54 +110,54 @@ class GridWorldEnv(gym.Env):
         seed: Optional[int] = None,
     ) -> None:
         """
-    Initialize the GridWorld environment.
+        Initialize the GridWorld environment.
 
-    Parameters
-    ----------
-    agents : List[Agent]
-        List of Agent instances that will participate in the environment.
-    render_mode : str, optional
-        How to render the environment:
-        
-        - ``'human'``: Display pygame window
-        - ``'rgb_array'``: Return pixel array
-        - ``None``: No rendering (fastest for training)
-        
-    size : int, default=5
-        Grid dimensions (size x size cells).
-    perc_num_obstacle : float, default=30.0
-        Percentage of cells to fill with obstacles (0-100).
-    window_size : int, default=600
-        Pygame window size in pixels.
-    seed : int, optional
-        Random seed for reproducible obstacle and agent placement.
+        Parameters
+        ----------
+        agents : List[Agent]
+            List of Agent instances that will participate in the environment.
+        render_mode : str, optional
+            How to render the environment:
 
-    Raises
-    ------
-    AssertionError
-        If ``render_mode`` is not None, 'human', or 'rgb_array'.
+            - ``'human'``: Display pygame window
+            - ``'rgb_array'``: Return pixel array
+            - ``None``: No rendering (fastest for training)
 
-    Examples
-    --------
-    >>> agents = [Agent("predator", "pred_1", "P1")]
-    >>> env = GridWorldEnv(agents=agents, size=10, seed=42)
-    >>> env.size
-    10
+        size : int, default=5
+            Grid dimensions (size x size cells).
+        perc_num_obstacle : float, default=30.0
+            Percentage of cells to fill with obstacles (0-100).
+        window_size : int, default=600
+            Pygame window size in pixels.
+        seed : int, optional
+            Random seed for reproducible obstacle and agent placement.
 
-    Notes
-    -----
-    The following attributes are initialized:
-    
-    - ``_agents_location``: Empty list (populated on reset)
-    - ``_obstacle_location``: Empty list (populated on reset)
-    - ``_captures_total``: 0
-    - ``_captured_agents``: Empty list
-    - ``window``, ``clock``: None (lazy initialization)
+        Raises
+        ------
+        AssertionError
+            If ``render_mode`` is not None, 'human', or 'rgb_array'.
 
-    See Also
-    --------
-    reset : Initialize agent and obstacle positions.
-    """
+        Examples
+        --------
+        >>> agents = [Agent("predator", "pred_1", "P1")]
+        >>> env = GridWorldEnv(agents=agents, size=10, seed=42)
+        >>> env.size
+        10
+
+        Notes
+        -----
+        The following attributes are initialized:
+
+        - ``_agents_location``: Empty list (populated on reset)
+        - ``_obstacle_location``: Empty list (populated on reset)
+        - ``_captures_total``: 0
+        - ``_captured_agents``: Empty list
+        - ``window``, ``clock``: None (lazy initialization)
+
+        See Also
+        --------
+        reset : Initialize agent and obstacle positions.
+        """
         assert render_mode is None or render_mode in self.metadata["render_modes"]
 
         self.size = int(size)
@@ -204,13 +204,13 @@ class GridWorldEnv(gym.Env):
     # -------------------------
     def _make_observation_space(self) -> spaces.Dict:
         """
-    Create observation space mapping agent names to position spaces.
+        Create observation space mapping agent names to position spaces.
 
-    Returns
-    -------
-    gymnasium.spaces.Dict
-        Dictionary space with agent names as keys.
-    """
+        Returns
+        -------
+        gymnasium.spaces.Dict
+            Dictionary space with agent names as keys.
+        """
         obs_space = spaces.Dict({})
         for ag in self.agents:
             obs_space.spaces[ag.agent_name] = spaces.Box(
@@ -223,37 +223,37 @@ class GridWorldEnv(gym.Env):
 
     def _make_action_space(self) -> spaces.Discrete:
         """
-    Create discrete action space (5 actions).
+        Create discrete action space (5 actions).
 
-    Returns
-    -------
-    gymnasium.spaces.Discrete
-        Discrete space with 5 actions.
+        Returns
+        -------
+        gymnasium.spaces.Discrete
+            Discrete space with 5 actions.
 
-    Notes
-    -----
-    Actions: 0=Right, 1=Up, 2=Left, 3=Down, 4=Noop.
-    """
+        Notes
+        -----
+        Actions: 0=Right, 1=Up, 2=Left, 3=Down, 4=Noop.
+        """
         return spaces.Discrete(5)
 
     def _get_obs(self) -> Dict[str, Dict]:
         """
-    Get current observations for all agents.
+        Get current observations for all agents.
 
-    Returns
-    -------
-    Dict[str, Dict]
-        Mapping of agent_name → observation dict containing:
-        
-        - ``"local"``: Agent's position as numpy array
-        - ``"global"``: Distances to other agents and obstacles
+        Returns
+        -------
+        Dict[str, Dict]
+            Mapping of agent_name → observation dict containing:
 
-    Examples
-    --------
-    >>> obs = env._get_obs()
-    >>> obs["P1"]["local"]
-    array([2, 3])
-    """
+            - ``"local"``: Agent's position as numpy array
+            - ``"global"``: Distances to other agents and obstacles
+
+        Examples
+        --------
+        >>> obs = env._get_obs()
+        >>> obs["P1"]["local"]
+        array([2, 3])
+        """
         obs: Dict[str, Dict] = {}
         for ag in self.agents:
             distances: Dict[str, int] = {}
@@ -295,13 +295,13 @@ class GridWorldEnv(gym.Env):
 
     def _get_info(self) -> Dict[str, Dict]:
         """
-    Get metadata information for all agents.
+        Get metadata information for all agents.
 
-    Returns
-    -------
-    Dict[str, Dict]
-        Mapping of agent_name → info dict from each agent's ``_get_info()``.
-    """
+        Returns
+        -------
+        Dict[str, Dict]
+            Mapping of agent_name → info dict from each agent's ``_get_info()``.
+        """
         return {ag.agent_name: ag._get_info() for ag in self.agents}
 
     # -------------------------
@@ -314,40 +314,40 @@ class GridWorldEnv(gym.Env):
         start_location: str = "random",
     ) -> Tuple[Dict, Dict]:
         """
-    Reset environment to start a new episode.
+        Reset environment to start a new episode.
 
-    Parameters
-    ----------
-    seed : int, optional
-        Random seed for reproducible initialization.
-    options : dict, optional
-        Additional options (reserved for future use).
-    start_location : str, default="random"
-        Agent placement strategy: ``"random"`` or ``"fixed"``.
+        Parameters
+        ----------
+        seed : int, optional
+            Random seed for reproducible initialization.
+        options : dict, optional
+            Additional options (reserved for future use).
+        start_location : str, default="random"
+            Agent placement strategy: ``"random"`` or ``"fixed"``.
 
-    Returns
-    -------
-    observations : Dict[str, Dict]
-        Initial observations for each agent.
-    info : Dict[str, Dict]
-        Initial metadata for each agent.
+        Returns
+        -------
+        observations : Dict[str, Dict]
+            Initial observations for each agent.
+        info : Dict[str, Dict]
+            Initial metadata for each agent.
 
-    Examples
-    --------
-    >>> obs, info = env.reset(seed=42)
-    >>> obs["P1"]["local"]
-    array([1, 3])
+        Examples
+        --------
+        >>> obs, info = env.reset(seed=42)
+        >>> obs["P1"]["local"]
+        array([1, 3])
 
-    Notes
-    -----
-    Reset sequence:
-    
-    1. Reseed RNG if seed provided
-    2. Reset capture counters
-    3. Place obstacles randomly
-    4. Place agents in remaining cells
-    5. Return initial observations
-    """
+        Notes
+        -----
+        Reset sequence:
+
+        1. Reseed RNG if seed provided
+        2. Reset capture counters
+        3. Place obstacles randomly
+        4. Place agents in remaining cells
+        5. Return initial observations
+        """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
 
@@ -385,18 +385,18 @@ class GridWorldEnv(gym.Env):
         self, avoid: Optional[set] = None
     ) -> List[np.ndarray]:  # fix randomness
         """
-    Initialize obstacle positions on the grid.
+        Initialize obstacle positions on the grid.
 
-    Parameters
-    ----------
-    avoid : set, optional
-        Set of (x, y) tuples where obstacles cannot be placed.
+        Parameters
+        ----------
+        avoid : set, optional
+            Set of (x, y) tuples where obstacles cannot be placed.
 
-    Returns
-    -------
-    List[np.ndarray]
-        List of [x, y] obstacle coordinates.
-    """
+        Returns
+        -------
+        List[np.ndarray]
+            List of [x, y] obstacle coordinates.
+        """
         avoid = avoid or set()
         cells = [
             (x, y)
@@ -415,26 +415,26 @@ class GridWorldEnv(gym.Env):
         self, agent_positions: Dict[str, tuple[int, int]], weight: float
     ) -> Dict[str, float]:
         """
-    Calculate distance-based potential for reward shaping.
+        Calculate distance-based potential for reward shaping.
 
-    Parameters
-    ----------
-    agent_positions : Dict[str, Tuple[int, int]]
-        Mapping of agent_name → (x, y) position.
-    weight : float
-        Scaling factor for potential values.
+        Parameters
+        ----------
+        agent_positions : Dict[str, Tuple[int, int]]
+            Mapping of agent_name → (x, y) position.
+        weight : float
+            Scaling factor for potential values.
 
-    Returns
-    -------
-    Dict[str, float]
-        Mapping of agent_name → potential value.
+        Returns
+        -------
+        Dict[str, float]
+            Mapping of agent_name → potential value.
 
-    Notes
-    -----
-    Used for potential-based reward shaping to provide denser rewards.
-    Predators: closer to prey = higher potential.
-    Prey: farther from predators = higher potential.
-    """
+        Notes
+        -----
+        Used for potential-based reward shaping to provide denser rewards.
+        Predators: closer to prey = higher potential.
+        Prey: farther from predators = higher potential.
+        """
         dist_potential: Dict[str, float] = {}
 
         def manhattan_dist(p1, p2):
@@ -519,7 +519,7 @@ class GridWorldEnv(gym.Env):
         Notes
         -----
         Reward structure:
-        
+
         - Predator capture: ``+10.0``
         - Predator timestep: ``-0.01``
         - Prey survival: ``+0.1``
@@ -566,41 +566,41 @@ class GridWorldEnv(gym.Env):
 
     def step(self, action: Dict[str, int]) -> Dict[str, object]:
         """
-    Execute one timestep of the environment.
+        Execute one timestep of the environment.
 
-    Parameters
-    ----------
-    action : Dict[str, int]
-        Mapping of agent_name → action index (0-4).
+        Parameters
+        ----------
+        action : Dict[str, int]
+            Mapping of agent_name → action index (0-4).
 
-    Returns
-    -------
-    Dict[str, object]
-        Dictionary containing:
-        
-        - ``"obs"``: New observations for each agent
-        - ``"reward"``: Rewards for each agent
-        - ``"done"``: Whether episode ended (all prey captured)
-        - ``"truncated"``: Whether episode was cut short
-        - ``"info"``: Additional information
+        Returns
+        -------
+        Dict[str, object]
+            Dictionary containing:
 
-    Examples
-    --------
-    >>> result = env.step({"P1": 0, "R1": 1})
-    >>> result["done"]
-    False
+            - ``"obs"``: New observations for each agent
+            - ``"reward"``: Rewards for each agent
+            - ``"done"``: Whether episode ended (all prey captured)
+            - ``"truncated"``: Whether episode was cut short
+            - ``"info"``: Additional information
 
-    Notes
-    -----
-    Step execution order:
-    
-    1. Process each agent's action
-    2. Validate moves (bounds, obstacles)
-    3. Check for captures
-    4. Calculate rewards
-    5. Check termination
-    6. Return results
-    """
+        Examples
+        --------
+        >>> result = env.step({"P1": 0, "R1": 1})
+        >>> result["done"]
+        False
+
+        Notes
+        -----
+        Step execution order:
+
+        1. Process each agent's action
+        2. Validate moves (bounds, obstacles)
+        3. Check for captures
+        4. Calculate rewards
+        5. Check termination
+        6. Return results
+        """
         # --- preserve previous positions for PBRS & diagnostics ---
         self._prev_agents_location = [
             pos.copy() if hasattr(pos, "copy") else np.array(pos, dtype=np.int32)
@@ -784,17 +784,17 @@ class GridWorldEnv(gym.Env):
     # -------------------------
     def _render_frame(self) -> Optional[np.ndarray]:
         """
-    Render current state using pygame.
+        Render current state using pygame.
 
-    Returns
-    -------
-    np.ndarray or None
-        Pixel array if ``render_mode='rgb_array'``, else None.
+        Returns
+        -------
+        np.ndarray or None
+            Pixel array if ``render_mode='rgb_array'``, else None.
 
-    Notes
-    -----
-    Draws grid lines, obstacles (gray), and agents (via ``_draw_agent``).
-    """
+        Notes
+        -----
+        Draws grid lines, obstacles (gray), and agents (via ``_draw_agent``).
+        """
         # Initialize pygame window and clock lazily
         if self.window is None and self.render_mode == "human":
             pygame.init()
@@ -847,18 +847,18 @@ class GridWorldEnv(gym.Env):
 
     def render(self, mode: Optional[str] = None) -> Optional[np.ndarray]:
         """
-    Public render method following Gymnasium interface.
+        Public render method following Gymnasium interface.
 
-    Parameters
-    ----------
-    mode : str, optional
-        Override render mode (``'human'`` or ``'rgb_array'``).
+        Parameters
+        ----------
+        mode : str, optional
+            Override render mode (``'human'`` or ``'rgb_array'``).
 
-    Returns
-    -------
-    np.ndarray or None
-        Pixel array if mode is ``'rgb_array'``, else None.
-    """
+        Returns
+        -------
+        np.ndarray or None
+            Pixel array if mode is ``'rgb_array'``, else None.
+        """
         if mode is not None:
             prev = self.render_mode
             self.render_mode = mode
@@ -872,13 +872,13 @@ class GridWorldEnv(gym.Env):
 
     def close(self) -> None:
         """
-    Clean up environment resources.
+        Clean up environment resources.
 
-    Notes
-    -----
-    Closes pygame window and releases resources.
-    Safe to call multiple times.
-    """
+        Notes
+        -----
+        Closes pygame window and releases resources.
+        Safe to call multiple times.
+        """
         if self.window is not None:
             try:
                 pygame.display.quit()
