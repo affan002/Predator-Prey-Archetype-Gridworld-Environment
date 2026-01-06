@@ -10,6 +10,12 @@ marl_venv/
 .pytest_cache/
 __pycache__/
 
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
 # Ignore compiled Python files
 *.pyc
 *.pyo
