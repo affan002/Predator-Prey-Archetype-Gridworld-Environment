@@ -23,6 +23,18 @@ A **discrete, grid-based multi-agent predator–prey environment** designed as a
 
 ---
 
+## Documentation 
+
+Full documentation is available at: **[https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/](https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/)**
+
+- [Usage Guide](https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/usage/)
+- [Agent Concepts](https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/agents/)
+- [Environment Guide](https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/environment/)
+- [API Reference Agents](https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/api/agents/)
+- [API Reference GridWorldEnv](https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/api/gridworld/)
+
+---
+
 ## Overview
 
 This repository provides a **discrete, grid-based predator-prey simulation environment** designed to support controlled, interpretable, and reproducible experiments in MARL. The environment models classic predator-prey dynamics where multiple agents (predators and prey) interact and learn in a bounded grid world.
@@ -79,6 +91,26 @@ Key goals of this framework:
 
 ## Getting Started
 
+### Repository Structure 
+
+```text
+Predator-Prey-Gridworld-Environment/
+├── src/
+│   ├── multi_agent_package/       # Core environment code
+│   │   ├── agents.py              # Agent class
+│   │   ├── gridworld.py           # GridWorldEnv class
+│   │   └── __init__.py
+│   └── baselines/                 # RL algorithm implementations
+│       ├── IQL/                   # Independent Q-Learning
+│       ├── CQL/                   # Central Q-Learning
+│       └── MIXED/                 # Mixed strategies
+├── docs/                          # Documentation (MkDocs)
+├── tests/                         # Unit tests
+├── requirements.txt               # Runtime dependencies
+├── requirements-dev.txt           # Development dependencies
+└── mkdocs.yml                     # Documentation config
+```
+
 ### Installation
 
 Clone the repository:
@@ -100,23 +132,34 @@ pip install -r requirements.txt
 from multi_agent_package.gridworld import GridWorldEnv
 from multi_agent_package.agents import Agent
 
-# Define agents
-agent1 = Agent("prey", "Tom")
-agent2 = Agent("predator", "Jerry")
+# Define agents (type, team, name)
+predator = Agent("predator", "predator_1", "Hunter")
+prey = Agent("prey", "prey_1", "Runner")
 
 # Create environment
-env = GridWorldEnv(agents=[agent1, agent2], render=True)
+env = GridWorldEnv(
+    agents=[predator, prey],
+    size=8,
+    render_mode="human"
+)
 
 # Run a single episode
-obs = env.reset()
+obs, info = env.reset(seed=42)
 done = False
+
 while not done:
-    actions = env.sample_random_actions()
-    obs, rewards, done, info = env.step(actions)
-    env.render()
+    actions = {
+        "Hunter": env.action_space.sample(),
+        "Runner": env.action_space.sample()
+    }
+    result = env.step(actions)
+    done = result["done"]
+
+env.close()
 ```
 
 ---
+
 
 ## Contributing
 
