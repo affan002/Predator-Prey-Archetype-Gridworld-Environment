@@ -1,5 +1,22 @@
 # 🐾 Predator–Prey Gridworld Environment
-  (Work-In-Progress) A minimalist, discrete multi-agent predator-prey archytype environment.
+
+<p align="center">
+  <a href="https://provalarous.github.io/Predator-Prey-Archetype-Gridworld-Environment/">
+    <img src="https://img.shields.io/badge/docs-online-blue.svg" alt="Documentation">
+  </a>
+  <a href="./CONTRIBUTING.md">
+    <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions Welcome">
+  </a>
+  <a href="./CODE_OF_CONDUCT.md">
+    <img src="https://img.shields.io/badge/code%20of%20conduct-enforced-orange.svg" alt="Code of Conduct">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License">
+  </a>
+</p>
+
+A **discrete, grid-based multi-agent predator–prey environment** designed as a controlled research testbed for studying coordination, pursuit–evasion, and emergent behavior in Multi-Agent Reinforcement Learning (MARL).
+
 
 <h3> Early Environment SnapShot</h3>
 <img src="miscellenous/imgs/game_snap_v2.png" alt="Early Environment SnapShot" width="400"/>
